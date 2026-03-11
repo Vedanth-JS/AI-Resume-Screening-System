@@ -54,5 +54,4 @@ The dashboard will be available at `http://localhost:5173`.
 ## Architecture
 - **Frontend**: React + Tailwind CSS + Recharts
 - **Backend**: FastAPI + SQLAlchemy + pdfplumber
-- **AI**: Claude 3.5 Sonnet
 - **Database**: PostgreSQL
