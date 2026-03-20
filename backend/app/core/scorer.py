@@ -1,32 +1,44 @@
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-from sentence_transformers import SentenceTransformer
+import os
+from openai import OpenAI
 import numpy as np
 from typing import Dict, Any, List
 
-# Load BERT model lazily
-_bert_model = None
-
-def get_bert_model():
-    global _bert_model
-    if _bert_model is None:
-        _bert_model = SentenceTransformer('all-MiniLM-L6-v2')
-    return _bert_model
+# Initialize OpenAI Client
+api_key = os.getenv("OPENAI_API_KEY")
+if not api_key:
+    # Use a dummy key to prevent initialization error; calls will fail gracefully in try-except below
+    api_key = "sk-no-key-provided-local-dev"
+client = OpenAI(api_key=api_key)
 
 class Scorer:
     @staticmethod
-    def compute_tfidf_similarity(jd_text: str, resume_text: str) -> float:
-        vectorizer = TfidfVectorizer(stop_words='english')
-        tfidf = vectorizer.fit_transform([jd_text, resume_text])
-        similarity = cosine_similarity(tfidf[0:1], tfidf[1:2])
-        return float(similarity[0][0])
+    def get_embedding(text: str) -> List[float]:
+        try:
+            response = client.embeddings.create(
+                input=text,
+                model="text-embedding-3-small"
+            )
+            return response.data[0].embedding
+        except Exception as e:
+            print(f"Error getting OpenAI embedding: {e}")
+            return [0.0] * 1536 # Default size for text-embedding-3-small
 
     @staticmethod
-    def compute_bert_similarity(jd_text: str, resume_text: str) -> float:
-        model = get_bert_model()
-        embeddings = model.encode([jd_text, resume_text])
-        similarity = cosine_similarity([embeddings[0]], [embeddings[1]])
-        return float(similarity[0][0])
+    def cosine_similarity(v1: List[float], v2: List[float]) -> float:
+        a = np.array(v1)
+        b = np.array(v2)
+        dot_product = np.dot(a, b)
+        norm_a = np.linalg.norm(a)
+        norm_b = np.linalg.norm(b)
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+        return float(dot_product / (norm_a * norm_b))
+
+    @staticmethod
+    def compute_semantic_similarity(jd_text: str, resume_text: str) -> float:
+        emb1 = Scorer.get_embedding(jd_text)
+        emb2 = Scorer.get_embedding(resume_text)
+        return Scorer.cosine_similarity(emb1, emb2)
 
     @staticmethod
     def calculate_total_score(
@@ -61,7 +73,6 @@ class Scorer:
             exp_score = min(candidate_exp / required_exp, 1.0)
 
         # Education Score
-        # Simple binary for now
         edu_score = 1.0 if candidate_edu.lower() == required_edu.lower() else 0.5
         if candidate_edu == "Not Specified": edu_score = 0.2
 

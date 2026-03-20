@@ -152,7 +152,7 @@ const UploadPage = () => {
                         )}
 
                         <button 
-                            disabled={loading || !jobData.title || resumes.length === 0}
+                            disabled={loading || !jobData.title || !jobData.description || resumes.length === 0}
                             onClick={handleUpload}
                             className="w-full mt-10 btn-primary flex items-center justify-center py-5 text-lg disabled:opacity-50 disabled:cursor-not-allowed group overflow-hidden relative"
                         >
