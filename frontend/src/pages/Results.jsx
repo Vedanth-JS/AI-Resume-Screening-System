@@ -14,7 +14,17 @@ const ResultsPage = () => {
     useEffect(() => {
         const fetchResults = async () => {
             try {
-                const res = await jobsApi.getResults(jobId === 'latest' ? 1 : jobId);
+                let targetId = jobId;
+                if (jobId === 'latest') {
+                    const jobsRes = await jobsApi.getAll();
+                    if (jobsRes.data.length > 0) {
+                        targetId = jobsRes.data[jobsRes.data.length - 1].id;
+                    } else {
+                        setLoading(false);
+                        return;
+                    }
+                }
+                const res = await jobsApi.getResults(targetId);
                 setResults(res.data);
             } catch (err) {
                 console.error(err);
