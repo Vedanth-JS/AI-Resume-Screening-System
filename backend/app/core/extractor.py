@@ -1,0 +1,70 @@
+import re
+from typing import List, Dict, Any
+
+# Load spaCy model lazily
+_nlp = None
+
+def get_nlp():
+    global _nlp
+    if _nlp is None:
+        try:
+            import spacy
+            _nlp = spacy.load("en_core_web_sm")
+        except Exception as e:
+            print(f"Warning: Could not load spaCy model: {e}")
+            _nlp = None
+    return _nlp
+
+SKILLS_ONTOLOGY = [
+    "Python", "Java", "C++", "JavaScript", "React", "Node.js", "FastAPI", "SQL", "PostgreSQL",
+    "Docker", "Kubernetes", "AWS", "Azure", "GCP", "Machine Learning", "NLP", "Scikit-learn",
+    "TensorFlow", "PyTorch", "Pandas", "NumPy", "Git", "CI/CD", "Redis", "Celery", "NoSQL",
+    "MongoDB", "HTML", "CSS", "Tailwind", "REST API", "GraphQL", "TypeScript", "Spark", "Kafka"
+]
+
+class FeatureExtractor:
+    def __init__(self, text: str):
+        self.text = text
+        nlp = get_nlp()
+        self.doc = nlp(text) if nlp else None
+
+    def extract_skills(self) -> List[str]:
+        found_skills = []
+        for skill in SKILLS_ONTOLOGY:
+            if re.search(rf"\b{re.escape(skill)}\b", self.text, re.IGNORECASE):
+                found_skills.append(skill)
+        return list(set(found_skills))
+
+    def extract_experience(self) -> int:
+        # Look for patterns like "5 years", "10+ years", "3 yrs"
+        patterns = [
+            r"(\d+)\+?\s*years?",
+            r"(\d+)\+?\s*yrs?"
+        ]
+        max_exp = 0
+        for pattern in patterns:
+            matches = re.finditer(pattern, self.text, re.IGNORECASE)
+            for match in matches:
+                exp = int(match.group(1))
+                if exp > max_exp:
+                    max_exp = exp
+        return max_exp
+
+    def extract_education(self) -> str:
+        degrees = ["B.Tech", "B.E", "B.S", "M.Tech", "M.E", "M.S", "PhD", "Bachelor", "Master"]
+        for degree in degrees:
+            if re.search(rf"\b{re.escape(degree)}\b", self.text, re.IGNORECASE):
+                return degree
+        return "Not Specified"
+
+    def extract_entities(self) -> Dict[str, List[str]]:
+        entities = {"PERSON": [], "ORG": [], "GPE": []}
+        if not self.doc:
+            return entities
+        for ent in self.doc.ents:
+            if ent.label_ in entities:
+                entities[ent.label_].append(ent.text)
+        # Unique values
+        for key in entities:
+            entities[key] = list(set(entities[key]))
+        return entities
