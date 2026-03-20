@@ -1,19 +1,12 @@
 import re
+import nltk
 from typing import List, Dict, Any
 
-# Load spaCy model lazily
-_nlp = None
-
-def get_nlp():
-    global _nlp
-    if _nlp is None:
-        try:
-            import spacy
-            _nlp = spacy.load("en_core_web_sm")
-        except Exception as e:
-            print(f"Warning: Could not load spaCy model: {e}")
-            _nlp = None
-    return _nlp
+# Ensure nltk resources are available
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt')
 
 SKILLS_ONTOLOGY = [
     "Python", "Java", "C++", "JavaScript", "React", "Node.js", "FastAPI", "SQL", "PostgreSQL",
@@ -25,8 +18,8 @@ SKILLS_ONTOLOGY = [
 class FeatureExtractor:
     def __init__(self, text: str):
         self.text = text
-        nlp = get_nlp()
-        self.doc = nlp(text) if nlp else None
+        # Use NLTK for sentence/word tokenization if complex logic is needed, 
+        # but for now regex is sufficient and lighter.
 
     def extract_skills(self) -> List[str]:
         found_skills = []
@@ -36,7 +29,6 @@ class FeatureExtractor:
         return list(set(found_skills))
 
     def extract_experience(self) -> int:
-        # Look for patterns like "5 years", "10+ years", "3 yrs"
         patterns = [
             r"(\d+)\+?\s*years?",
             r"(\d+)\+?\s*yrs?"
@@ -59,18 +51,15 @@ class FeatureExtractor:
 
     def extract_entities(self) -> Dict[str, List[str]]:
         entities = {"PERSON": [], "ORG": [], "GPE": []}
+        header = self.text[:200]
         
-        # Simple Regex Fallback for Person Names (Upper case words at start of text)
-        # Usually names are in the first 100 characters
-        header = self.text[:100]
+        # Enhanced name detection with regex
         name_matches = re.findall(r"^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)", header, re.MULTILINE)
         if name_matches:
             entities["PERSON"] = [name_matches[0]]
         else:
-            # Try to find common email prefix as a fallback name
             email_match = re.search(r'([a-zA-Z0-9._%+-]+)@[a-zA-Z0-9.-]+\.[A-Z|a-z]{2,}', self.text)
             if email_match:
-                entities["PERSON"] = [email_match.group(1).capitalize()]
+                entities["PERSON"] = [email_match.group(1).replace('.', ' ').capitalize()]
                 
-        # Optional: Add simple regex for common orgs or locations if needed
         return entities

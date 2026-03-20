@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Upload, AlertCircle, CheckCircle, Brain, Sparkles, Files } from 'lucide-react';
+import { Upload, AlertCircle, CheckCircle, Search, ArrowRight, Files } from 'lucide-react';
 import { jobsApi } from '../api/client';
 
 const UploadPage = () => {
@@ -55,7 +55,7 @@ const UploadPage = () => {
         <div className="space-y-10">
             <header>
                 <h2 className="text-5xl font-display font-bold text-slate-900 mb-4 tracking-tight">
-                    Smart Candidate <span className="text-primary">Discovery</span>
+                    Candidate <span className="text-primary">Discovery</span>
                 </h2>
                 <p className="text-xl text-slate-500 max-w-2xl leading-relaxed">
                     Upload your job requirements and candidate resumes. Our system will rank them based on technical fit, experience, and potential.
@@ -66,7 +66,7 @@ const UploadPage = () => {
                 <section className="lg:col-span-7 space-y-8">
                     <div className="card glass relative overflow-hidden group">
                         <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
-                            <Brain className="w-32 h-32" />
+                            <Search className="w-32 h-32" />
                         </div>
                         <h3 className="text-2xl font-display font-bold mb-6 flex items-center text-slate-800">
                             Requirement Definition
@@ -160,12 +160,12 @@ const UploadPage = () => {
                                 {loading ? (
                                     <>
                                         <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-3" />
-                                        Analyzing Profiles...
+                                        Processing Profiles...
                                     </>
                                 ) : (
                                     <>
-                                        <Sparkles className="w-5 h-5 mr-3 group-hover:animate-pulse" />
-                                        Start Intelligence Screening
+                                        <ArrowRight className="w-5 h-5 mr-3 group-hover:translate-x-1 transition-transform" />
+                                        Start Screening
                                     </>
                                 )}
                             </span>

@@ -53,7 +53,7 @@ const ResultsPage = () => {
             <header className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                 <div>
                     <h2 className="text-4xl font-display font-bold text-slate-900 tracking-tight">Candidate <span className="text-primary">Rankings</span></h2>
-                    <p className="text-lg text-slate-500 mt-2">Precision scoring based on multi-dimensional talent vectors.</p>
+                    <p className="text-lg text-slate-500 mt-2">Rankings based on multi-dimensional candidate evaluation.</p>
                 </div>
                 
                 <div className="flex items-center gap-3">
@@ -82,7 +82,7 @@ const ResultsPage = () => {
                         <div className="absolute inset-0 border-4 border-primary/10 rounded-full"></div>
                         <div className="absolute inset-0 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
                     </div>
-                    <p className="text-slate-500 font-medium animate-pulse">Running Neural Ranking Algorithms...</p>
+                    <p className="text-slate-500 font-medium animate-pulse">Processing screening data...</p>
                 </div>
             ) : (
                 <div className="grid gap-6">
@@ -199,7 +199,7 @@ const ResultsPage = () => {
                                 <User className="w-10 h-10 text-slate-300" />
                             </div>
                             <p className="text-slate-500 font-bold">Queueing candidate profiles...</p>
-                            <p className="text-slate-400 text-sm mt-1 text-center max-w-xs">Return to the upload page to start a new intelligence screening session.</p>
+                            <p className="text-slate-400 text-sm mt-1 text-center max-w-xs">Return to the upload page to start a new screening session.</p>
                             <button 
                                 onClick={() => navigate("/")}
                                 className="mt-8 text-primary font-bold text-sm hover:underline"

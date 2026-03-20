@@ -11,6 +11,7 @@ services:
       - DATABASE_URL=postgresql://user:pass@db:5432/resume_db
       - REDIS_URL=redis://redis:6379/0
       - MINIO_URL=http://minio:9000
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-your_api_key_here}
     depends_on:
       - db
       - redis
@@ -24,6 +25,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://user:pass@db:5432/resume_db
       - REDIS_URL=redis://redis:6379/0
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-your_api_key_here}
     depends_on:
       - db
       - redis

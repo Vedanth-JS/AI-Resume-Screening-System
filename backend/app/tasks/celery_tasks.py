@@ -34,8 +34,8 @@ def run_screening_logic(job_id: int, filename: str, file_content: bytes, candida
             return {"error": "Job not found"}
         
         # 4. Score
-        # TF-IDF for now, can add BERT
-        semantic_score = Scorer.compute_tfidf_similarity(job.description, raw_text)
+        # Use OpenAI semantic similarity
+        semantic_score = Scorer.compute_semantic_similarity(job.description, raw_text)
         
         scores = Scorer.calculate_total_score(
             skills_matched=skills,
@@ -73,6 +73,7 @@ def run_screening_logic(job_id: int, filename: str, file_content: bytes, candida
         
     except Exception as e:
         logging.error(f"Error processing resume: {e}")
-        return {"status": "error", "message": str(e)}
+        # Re-raise to allow the caller (routes.py) to know it failed
+        raise e
     finally:
         db.close()

@@ -43,7 +43,7 @@ const AnalyticsPage = () => {
 
     if (!analytics) return (
         <div className="flex items-center justify-center h-full">
-            <div className="animate-pulse text-slate-400 font-display font-medium">Synthesizing Analytics...</div>
+            <div className="animate-pulse text-slate-400 font-display font-medium">Loading Analytics...</div>
         </div>
     );
 
@@ -107,8 +107,8 @@ const AnalyticsPage = () => {
     return (
         <div className="space-y-12 pb-12">
             <header>
-                <h2 className="text-4xl font-display font-bold text-slate-900 tracking-tight">Intelligence <span className="text-primary">Insights</span></h2>
-                <p className="text-lg text-slate-500 mt-2 leading-relaxed">Leverage data-driven metrics to optimize your talent acquisition funnel.</p>
+                <h2 className="text-4xl font-display font-bold text-slate-900 tracking-tight">Recruitment <span className="text-primary">Insights</span></h2>
+                <p className="text-lg text-slate-500 mt-2 leading-relaxed">Leverage data-driven metrics to optimize your acquisition funnel.</p>
             </header>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
@@ -190,7 +190,7 @@ const AnalyticsPage = () => {
                     <div className="mt-8 p-6 bg-primary/5 rounded-2xl border border-primary/10">
                         <div className="flex items-start">
                             <div className="p-2 bg-white rounded-xl shadow-sm border border-primary/10 mr-4">
-                                <Sparkles className="w-4 h-4 text-primary" />
+                                <Info className="w-4 h-4 text-primary" />
                             </div>
                             <div>
                                 <h5 className="text-sm font-bold text-slate-800">System Recommendation</h5>

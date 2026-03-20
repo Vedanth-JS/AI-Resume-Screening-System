@@ -14,7 +14,7 @@ const App = () => {
         <aside className="w-72 bg-slate-50 border-r border-slate-200 flex flex-col">
           <div className="p-8">
             <h1 className="text-3xl font-bold gradient-text tracking-tight">Screener</h1>
-            <p className="text-xs text-slate-400 mt-1 uppercase tracking-widest font-semibold">Intelligence Recruitment</p>
+            <p className="text-xs text-slate-400 mt-1 uppercase tracking-widest font-semibold">Recruitment Assistant</p>
           </div>
           
           <nav className="flex-1 px-4 space-y-2">
