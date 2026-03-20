@@ -1,5 +1,5 @@
 import re
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 
 GENDER_NEUTRAL_PAIRS = {
     "rockstar": "expert",

@@ -3,7 +3,8 @@ from sqlalchemy.orm import Session
 from typing import List, Optional
 from ..db.database import get_db
 from ..db import crud, models
-from ..tasks.celery_tasks import process_resume_task
+from ..tasks.celery_tasks import process_resume_task, run_screening_logic
+import os
 from ..core.bias_detector import BiasDetector
 import json
 
@@ -52,11 +53,22 @@ async def screen_resumes(
         # Mocking email extraction for now, usually part of NER
         email = f"candidate_{resume.filename}@example.com"
         
-        # Dispatch to Celery
-        task = process_resume_task.delay(job_id, resume.filename, content, email)
-        task_ids.append(task.id)
+        # Dispatch to Celery or Fallback to Sync
+        try:
+            # Check if Redis is likely available
+            if os.getenv("REDIS_URL"):
+                task = process_resume_task.delay(job_id, resume.filename, content, email)
+                task_ids.append(task.id)
+            else:
+                # Fallback to sync execution
+                run_screening_logic(job_id, resume.filename, content, email)
+                task_ids.append(f"sync_{resume.filename}")
+        except Exception:
+            # Fallback to sync on any connection error
+            run_screening_logic(job_id, resume.filename, content, email)
+            task_ids.append(f"sync_{resume.filename}")
         
-    return {"message": "Screening started", "task_ids": task_ids}
+    return {"message": "Screening completed" if not os.getenv("REDIS_URL") else "Screening started", "task_ids": task_ids}
 
 @router.get("/results/{job_id}", response_model=List[dict])
 def get_results(job_id: int, db: Session = Depends(get_db)):

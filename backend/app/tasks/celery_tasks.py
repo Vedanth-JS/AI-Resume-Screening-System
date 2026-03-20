@@ -12,6 +12,9 @@ celery_app = Celery("tasks", broker=REDIS_URL, backend=REDIS_URL)
 
 @celery_app.task
 def process_resume_task(job_id: int, filename: str, file_content: bytes, candidate_email: str):
+    return run_screening_logic(job_id, filename, file_content, candidate_email)
+
+def run_screening_logic(job_id: int, filename: str, file_content: bytes, candidate_email: str):
     db = SessionLocal()
     try:
         # 1. Parse

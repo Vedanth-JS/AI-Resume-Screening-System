@@ -59,12 +59,18 @@ class FeatureExtractor:
 
     def extract_entities(self) -> Dict[str, List[str]]:
         entities = {"PERSON": [], "ORG": [], "GPE": []}
-        if not self.doc:
-            return entities
-        for ent in self.doc.ents:
-            if ent.label_ in entities:
-                entities[ent.label_].append(ent.text)
-        # Unique values
-        for key in entities:
-            entities[key] = list(set(entities[key]))
+        
+        # Simple Regex Fallback for Person Names (Upper case words at start of text)
+        # Usually names are in the first 100 characters
+        header = self.text[:100]
+        name_matches = re.findall(r"^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)", header, re.MULTILINE)
+        if name_matches:
+            entities["PERSON"] = [name_matches[0]]
+        else:
+            # Try to find common email prefix as a fallback name
+            email_match = re.search(r'([a-zA-Z0-9._%+-]+)@[a-zA-Z0-9.-]+\.[A-Z|a-z]{2,}', self.text)
+            if email_match:
+                entities["PERSON"] = [email_match.group(1).capitalize()]
+                
+        # Optional: Add simple regex for common orgs or locations if needed
         return entities
