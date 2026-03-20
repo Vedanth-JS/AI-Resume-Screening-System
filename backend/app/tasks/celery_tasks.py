@@ -27,7 +27,10 @@ def run_screening_logic(job_id: int, filename: str, file_content: bytes, candida
         edu = extractor.extract_education()
         entities = extractor.extract_entities()
         name = entities.get("PERSON", ["Unknown"])[0]
+        import time
+        email = f"candidate_{filename}_{int(time.time())}@example.com"
         
+        # Dispatch to sync logic
         # 3. Get Job Details
         job = crud.get_job_posting(db, job_id)
         if not job:
@@ -56,7 +59,7 @@ def run_screening_logic(job_id: int, filename: str, file_content: bytes, candida
             
         # 6. Save Candidate
         candidate = crud.create_candidate(
-            db, name=name, email=candidate_email, path=filename,
+            db, name=name, email=email, path=filename,
             text=raw_text, skills=skills, exp=exp, edu=edu
         )
         

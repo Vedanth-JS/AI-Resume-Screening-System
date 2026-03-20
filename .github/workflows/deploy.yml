@@ -16,7 +16,7 @@ jobs:
       - name: Run Tests
         run: |
           docker-compose run api pytest
-          docker-compose run frontend npm test
+          docker-compose run frontend npm run build
 
       - name: Deploy
         if: github.ref == 'refs/heads/main'

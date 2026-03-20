@@ -12,7 +12,7 @@ import {
     ArcElement,
     Filler
 } from 'chart.js';
-import { BarChart3, PieChart as PieChartIcon, TrendingUp, Users, Target, Award } from 'lucide-react';
+import { BarChart3, PieChart as PieChartIcon, TrendingUp, Users, Target, Award, Clock, Filter, ChevronRight, Download, Share2, Sparkles, Info } from 'lucide-react';
 import { jobsApi } from '../api/client';
 
 ChartJS.register(
@@ -136,9 +136,9 @@ const AnalyticsPage = () => {
                         <span className="text-[10px] font-bold text-amber-500 bg-amber-50 px-2 py-0.5 rounded-full">Optimal</span>
                     </div>
                     <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Conversion</p>
-                    <h3 className="text-4xl font-display font-black text-slate-900">
-                        {Math.round((analytics.funnel.accept / analytics.count) * 100)}%
-                    </h3>
+                    <div className="text-3xl font-bold text-slate-900">
+                        {analytics.funnel?.accept && analytics.count ? Math.round((analytics.funnel.accept / analytics.count) * 100) : 0}%
+                    </div>
                 </motion.div>
 
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="card glass border-l-4 border-l-slate-400 p-8">

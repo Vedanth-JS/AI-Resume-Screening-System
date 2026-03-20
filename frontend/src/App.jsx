@@ -1,12 +1,31 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
 import { LayoutDashboard, Upload, ListChecks, PieChart, Search, MessageSquare } from 'lucide-react';
+import { jobsApi } from './api/client';
 import { motion, AnimatePresence } from 'framer-motion';
 import UploadPage from './pages/Upload';
 import ResultsPage from './pages/Results';
 import AnalyticsPage from './pages/Analytics';
 
 const App = () => {
+  const [latestJobId, setLatestJobId] = React.useState(null);
+
+  React.useEffect(() => {
+    const fetchLatestJob = async () => {
+      try {
+        const response = await jobsApi.getAll();
+        if (response.data && response.data.length > 0) {
+          // Assuming the latest job is the last or the one with the highest ID
+          const latest = response.data[response.data.length - 1];
+          setLatestJobId(latest.id);
+        }
+      } catch (error) {
+        console.error("Failed to fetch jobs:", error);
+      }
+    };
+    fetchLatestJob();
+  }, []);
+
   return (
     <Router>
       <div className="flex h-screen bg-slate-50 font-sans">
@@ -22,11 +41,11 @@ const App = () => {
               <Upload className="w-5 h-5 mr-3 group-hover:scale-110 transition-transform" />
               Upload Resumes
             </Link>
-            <Link to="/results/latest" className="sidebar-link group">
+            <Link to={latestJobId ? `/results/${latestJobId}` : "/results/1"} className="sidebar-link group">
               <ListChecks className="w-5 h-5 mr-3 group-hover:scale-110 transition-transform" />
               Screening Results
             </Link>
-            <Link to="/analytics" className="sidebar-link group">
+            <Link to={latestJobId ? `/analytics/${latestJobId}` : "/analytics/1"} className="sidebar-link group">
               <PieChart className="w-5 h-5 mr-3 group-hover:scale-110 transition-transform" />
               Analytics
             </Link>
@@ -54,7 +73,7 @@ const App = () => {
               <Routes>
                 <Route path="/" element={<UploadPage />} />
                 <Route path="/results/:jobId" element={<ResultsPage />} />
-                <Route path="/analytics" element={<AnalyticsPage />} />
+                <Route path="/analytics/:jobId" element={<AnalyticsPage />} />
               </Routes>
             </motion.div>
           </div>
