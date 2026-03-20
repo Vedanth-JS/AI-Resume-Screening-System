@@ -6,8 +6,8 @@ from .api import routes
 from .db.database import Base, engine
 # from prometheus_fastapi_instrumentator import Instrumentator
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
+# Create database tables is now handled in the startup event or manually
+# Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Resume Screening System")
 
@@ -20,9 +20,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# @app.on_event("startup")
-# async def startup():
-#     Instrumentator().instrument(app).expose(app)
+@app.on_event("startup")
+async def startup_event():
+    # Only create tables if we are not in a test environment or if we want auto-migration
+    Base.metadata.create_all(bind=engine)
 
 # Include Routes
 app.include_router(routes.router, prefix="/api")
