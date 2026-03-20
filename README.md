@@ -1,18 +1,18 @@
 # Resume Screening System
 
-This project is a full-stack, production-ready system for automated resume screening using NLP (spaCy, BERT, scikit-learn).
+This project is a full-stack, production-ready system for automated resume screening using advanced natural language matching and semantic analysis.
 
 ## Features
 - **Resume Parsing**: Extract text from PDF/DOCX resumes.
-- **Weighted Scoring**: Multi-factor scoring (Skills, Experience, Education, Semantic Fit).
-- **Bias Detection**: Detect gendered language in JDs and anonymize candidate data.
+- **Weighted Scoring**: Multi-factor scoring (Skills, Experience, Education, Profile Match).
+- **Recruitment Integrity**: Detect exclusionary language in JDs and anonymize candidate data.
 - **Hiring Analytics**: Funnel visualization and skill gap analysis.
 - **Async Processing**: Handles bulk uploads using Celery and Redis.
 
 ## Tech Stack
-- **Backend**: FastAPI, spaCy, scikit-learn, BERT, Celery, Redis, PostgreSQL.
+- **Backend**: FastAPI, Python, Semantic Analysis Logic, Celery, Redis, PostgreSQL.
 - **Frontend**: React, Vite, Tailwind CSS, Chart.js.
-- **Infrastructure**: Docker, Nginx, Prometheus.
+- **Infrastructure**: Docker, Nginx.
 
 ## Getting Started
 
