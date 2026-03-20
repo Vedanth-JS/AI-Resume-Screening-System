@@ -11,7 +11,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Pre-download NLTK data to ensure stability in CI
-RUN python -m nltk.downloader punkt
+ENV NLTK_DATA=/usr/local/nltk_data
+RUN mkdir -p ${NLTK_DATA}
+RUN python -m nltk.downloader -d ${NLTK_DATA} punkt
 
 COPY . .
 
