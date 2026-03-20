@@ -26,3 +26,4 @@ Thumbs.db
 
 # Project Specific
 test_data/
+vite.config.js.timestamp-*
