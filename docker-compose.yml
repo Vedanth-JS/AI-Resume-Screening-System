@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  api:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - DATABASE_URL=postgresql://user:pass@db:5432/resume_db
+      - REDIS_URL=redis://redis:6379/0
+      - CHROMA_DB_URL=http://chromadb:8000
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      - db
+      - redis
+      - chromadb
+
+  worker:
+    build: ./backend
+    command: celery -A app.tasks.celery_tasks worker --loglevel=info
+    volumes:
+      - ./backend:/app
+    environment:
+      - DATABASE_URL=postgresql://user:pass@db:5432/resume_db
+      - REDIS_URL=redis://redis:6379/0
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=pass
+      - POSTGRES_DB=resume_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  chromadb:
+    image: chromadb/chroma:latest
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      - ALLOW_RESET=TRUE
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+    environment:
+      - VITE_API_URL=http://localhost:8000
+
+volumes:
+  postgres_data:
+  chroma_data:
