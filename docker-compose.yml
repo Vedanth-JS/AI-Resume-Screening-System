@@ -75,6 +75,9 @@ services:
       - /app/node_modules/
     environment:
       - VITE_API_URL=http://localhost:8000/api
+      - VITE_WATCH_USEPOLLING=true
+      - CHOKIDAR_USEPOLLING=true
+      - WATCHPACK_POLLING=true
     depends_on:
       - api
 

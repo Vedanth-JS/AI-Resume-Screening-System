@@ -4,7 +4,7 @@ import json
 import pandas as pd
 import os
 
-API_URL = os.getenv("API_URL", "http://localhost:8000")
+API_URL = os.getenv("API_URL", "http://api:8000")
 
 st.set_page_config(page_title="AI ATS Dashboard", layout="wide")
 

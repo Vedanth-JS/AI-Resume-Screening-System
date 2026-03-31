@@ -47,6 +47,19 @@ class CandidateResponse(CandidateBase):
     parsed_json: Optional[Dict[str, Any]] = None
     model_config = ConfigDict(from_attributes=True)
 
+class CandidateWithScore(BaseModel):
+    """Candidate enriched with their latest screening result."""
+    id: int
+    name: str
+    email: str
+    phone: Optional[str] = None
+    uploaded_at: datetime
+    final_score: Optional[float] = None
+    status: Optional[str] = "pending"
+    job_title: Optional[str] = None
+    job_id: Optional[int] = None
+    model_config = ConfigDict(from_attributes=True)
+
 class ScreeningResultResponse(BaseModel):
     candidate_id: int
     job_id: int
@@ -55,6 +68,13 @@ class ScreeningResultResponse(BaseModel):
     final_score: float
     explanation: Optional[str] = None
     status: str
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class NotificationResponse(BaseModel):
+    id: int
+    user_id: int
+    message: str
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 

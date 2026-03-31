@@ -1,0 +1,12 @@
+# Normalize all text files to LF in the repo, CRLF on Windows checkout
+* text=auto eol=lf
+
+# Force binary — never mangle these
+*.png  binary
+*.jpg  binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.zip  binary
+*.db   binary
+*.sqlite3 binary

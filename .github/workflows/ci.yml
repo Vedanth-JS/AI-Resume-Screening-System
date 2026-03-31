@@ -1,0 +1,103 @@
+name: CI – Test & Build
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.11"
+  NODE_VERSION: "20"
+
+jobs:
+  # ─── Backend Tests ─────────────────────────────────────────────────────────
+  backend-test:
+    name: Backend – pytest
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: test_ats
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 10s
+
+    env:
+      DATABASE_URL: postgresql://testuser:testpass@localhost:5432/test_ats
+      REDIS_URL: redis://localhost:6379/0
+      SECRET_KEY: test-ci-secret-key-do-not-use-in-prod
+      GOOGLE_API_KEY: ""   # LLM calls mocked in tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          python -m spacy download en_core_web_sm
+
+      - name: Run pytest
+        working-directory: backend
+        run: |
+          pytest tests/ -v --tb=short --asyncio-mode=auto \
+            --cov=app --cov-report=term-missing --cov-fail-under=60
+
+  # ─── Frontend Lint/Build ───────────────────────────────────────────────────
+  frontend-build:
+    name: Frontend – Vite build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install & build
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+  # ─── Docker Build (main only) ─────────────────────────────────────────────
+  docker-build:
+    name: Docker – Compose build
+    runs-on: ubuntu-latest
+    needs: [backend-test, frontend-build]
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker images
+        run: docker compose build --no-cache api frontend worker
+
+      - name: Smoke test – API health
+        run: |
+          docker compose up -d db redis chromadb api
+          sleep 20
+          curl -f http://localhost:8000/api/health || (docker compose logs api && exit 1)
+          docker compose down

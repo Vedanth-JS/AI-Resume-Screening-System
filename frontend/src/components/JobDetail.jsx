@@ -1,179 +1,355 @@
 import React, { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Briefcase, Users, FileText, ChevronRight, Zap, Target, Award, BrainCircuit } from 'lucide-react'
-import { jobService } from '../services/api'
-import api from '../services/api'
+import {
+  ArrowLeft, Briefcase, Users, Loader2, AlertCircle, Brain,
+  CheckCircle, ChevronRight, Zap, HelpCircle, BarChart2, Target
+} from 'lucide-react'
+import { Radar } from 'react-chartjs-2'
+import {
+  Chart as ChartJS, RadialLinearScale, PointElement,
+  LineElement, Filler, Tooltip, Legend
+} from 'chart.js'
+import { jobService, candidateService } from '../services/api'
 import { ResumeUpload } from './ResumeUpload'
-import { ResultViewer } from './ResultViewer'
+import api from '../services/api'
+
+ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend)
+
+// ─── Score Radar ──────────────────────────────────────────────────────────────
+
+function ScoreRadar({ result }) {
+  if (!result) return null
+  const { ats_breakdown = {} } = result
+  const labels = ['Keyword Match', 'Semantic Fit', 'Format Quality', 'Section Complete', 'Experience']
+  const values = [
+    ats_breakdown.keyword_score  ?? (result.skill_analysis?.score ?? 0) * 100,
+    ats_breakdown.semantic_score ?? result.semantic_score ?? 0,
+    ats_breakdown.format_score   ?? 75,
+    ats_breakdown.section_score  ?? 75,
+    ats_breakdown.experience_score ?? (result.experience_analysis?.score ?? 0) * 100,
+  ].map(v => Math.round(Math.min(v, 100)))
+
+  const data = {
+    labels,
+    datasets: [{
+      label: 'ATS Score Breakdown',
+      data: values,
+      backgroundColor: 'rgba(59,130,246,0.15)',
+      borderColor: 'rgba(59,130,246,0.8)',
+      borderWidth: 2,
+      pointBackgroundColor: 'rgba(59,130,246,1)',
+      pointBorderColor: '#fff',
+      pointHoverBackgroundColor: '#fff',
+      pointHoverBorderColor: 'rgba(59,130,246,1)',
+    }],
+  }
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+      r: {
+        beginAtZero: true,
+        max: 100,
+        ticks: { color: '#64748b', font: { size: 9 }, stepSize: 25 },
+        grid:  { color: 'rgba(255,255,255,0.06)' },
+        angleLines: { color: 'rgba(255,255,255,0.06)' },
+        pointLabels: { color: '#94a3b8', font: { size: 10, weight: 'bold' } },
+      },
+    },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: 'rgba(10,10,12,0.97)',
+        borderColor: 'rgba(255,255,255,0.07)',
+        borderWidth: 1,
+        titleColor: '#fff',
+        bodyColor: '#94a3b8',
+        callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed.r}%` },
+      },
+    },
+  }
+  return (
+    <div className="glass rounded-[2rem] p-8 border border-white/5">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-9 h-9 bg-blue-500/10 rounded-xl flex items-center justify-center border border-blue-500/20">
+          <BarChart2 className="w-5 h-5 text-blue-400" />
+        </div>
+        <div>
+          <h3 className="font-bold text-white text-sm">ATS Score Radar</h3>
+          <p className="text-xs text-slate-500">5-dimension match profile</p>
+        </div>
+      </div>
+      <div className="w-full" style={{ height: '260px' }}>
+        <Radar data={data} options={options} />
+      </div>
+      {/* Score bars */}
+      <div className="mt-6 space-y-2.5">
+        {labels.map((label, i) => {
+          const v = values[i]
+          const color = v >= 70 ? 'bg-emerald-500' : v >= 40 ? 'bg-amber-500' : 'bg-red-500'
+          return (
+            <div key={label} className="flex items-center gap-3">
+              <div className="w-28 text-right text-[10px] text-slate-500 font-bold flex-shrink-0">{label}</div>
+              <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                <div className={`h-full ${color} transition-all duration-700`} style={{ width: `${v}%` }} />
+              </div>
+              <div className="w-10 text-right text-xs font-bold text-slate-300">{v}%</div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─── Interview Questions ───────────────────────────────────────────────────────
+
+function InterviewQuestions({ questions = [] }) {
+  if (!questions || questions.length === 0) return null
+  const typeColors = {
+    technical:      'bg-blue-500/10 text-blue-400 border-blue-500/20',
+    behavioral:     'bg-purple-500/10 text-purple-400 border-purple-500/20',
+    situational:    'bg-amber-500/10 text-amber-400 border-amber-500/20',
+    system_design:  'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+  }
+  return (
+    <div className="glass rounded-[2rem] p-8 border border-white/5 bg-gradient-to-br from-purple-600/5 to-transparent">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-9 h-9 bg-purple-500/10 rounded-xl flex items-center justify-center border border-purple-500/20">
+          <HelpCircle className="w-5 h-5 text-purple-400" />
+        </div>
+        <div>
+          <h3 className="font-bold text-white text-sm">AI-Generated Interview Questions</h3>
+          <p className="text-xs text-slate-500">Targeted based on resume gaps vs. JD requirements</p>
+        </div>
+      </div>
+      <div className="space-y-4">
+        {questions.map((q, i) => {
+          const colorClass = typeColors[q.type] || typeColors.behavioral
+          return (
+            <div key={i} className="p-5 bg-white/[0.02] border border-white/5 rounded-2xl hover:border-purple-500/20 transition-all">
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <span className="text-sm font-bold text-white leading-relaxed flex-1">
+                  {i + 1}. {q.question}
+                </span>
+                <span className={`flex-shrink-0 text-[9px] font-bold uppercase tracking-widest px-2 py-1 rounded-lg border ${colorClass}`}>
+                  {(q.type || 'behavioral').replace('_', ' ')}
+                </span>
+              </div>
+              {q.rationale && (
+                <p className="text-xs text-slate-500 leading-relaxed pl-4 border-l border-white/5">
+                  {q.rationale}
+                </p>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ─── Suggestions ──────────────────────────────────────────────────────────────
+
+function Suggestions({ suggestions = [] }) {
+  if (!suggestions || suggestions.length === 0) return null
+  return (
+    <div className="glass rounded-[2rem] p-8 border border-white/5">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-9 h-9 bg-amber-500/10 rounded-xl flex items-center justify-center border border-amber-500/20">
+          <Target className="w-5 h-5 text-amber-400" />
+        </div>
+        <h3 className="font-bold text-white text-sm">Resume Improvement Suggestions</h3>
+      </div>
+      <ul className="space-y-3">
+        {suggestions.map((s, i) => (
+          <li key={i} className="flex items-start gap-3 text-sm text-slate-300">
+            <span className="w-5 h-5 flex-shrink-0 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 text-[10px] font-bold mt-0.5">
+              {i + 1}
+            </span>
+            {s}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+// ─── Main JobDetail ────────────────────────────────────────────────────────────
 
 export function JobDetail() {
   const { id } = useParams()
-  const [job, setJob] = useState(null)
-  const [candidates, setCandidates] = useState([])
-  const [selectedResult, setSelectedResult] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [job,        setJob]        = useState(null)
+  const [history,    setHistory]    = useState([])
+  const [selected,   setSelected]   = useState(null)
+  const [loading,    setLoading]    = useState(true)
+  const [lastResult, setLastResult] = useState(null)
 
   useEffect(() => {
-    const fetchJobData = async () => {
+    const fetchData = async () => {
       try {
-        const [jobRes, candidatesRes] = await Promise.all([
+        const [jobRes, histRes] = await Promise.all([
           jobService.getJob(id),
-          api.get(`/history/${id}`) 
+          api.get(`/history/${id}`),
         ])
         setJob(jobRes.data)
-        setCandidates(candidatesRes.data || [])
+        setHistory(histRes.data || [])
       } catch (err) {
-        console.error("Job detail fetch error:", err)
+        console.error('JobDetail fetch error:', err)
       } finally {
         setLoading(false)
       }
     }
-    fetchJobData()
+    fetchData()
   }, [id])
 
-  if (loading) return (
-    <div className="h-screen flex items-center justify-center -mt-20">
-      <div className="w-16 h-16 border-4 border-blue-500/10 border-t-blue-500 rounded-full animate-spin shadow-[0_0_20px_rgba(59,130,246,0.2)]" />
-    </div>
-  )
+  const handleUploadComplete = (result) => {
+    setLastResult(result?.analysis || result)
+    // Refresh history
+    api.get(`/history/${id}`).then(r => setHistory(r.data || []))
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-40">
+        <Loader2 className="w-10 h-10 text-blue-500 animate-spin" />
+      </div>
+    )
+  }
+
+  if (!job) {
+    return (
+      <div className="flex flex-col items-center py-32">
+        <AlertCircle className="w-12 h-12 text-red-400 mb-4" />
+        <p className="text-slate-400">Job posting not found.</p>
+        <Link to="/jobs" className="mt-4 text-blue-400 hover:text-blue-300 text-sm font-medium">← Back to Jobs</Link>
+      </div>
+    )
+  }
+
+  // Find full screening data for selected candidate
+  const selectedResult = selected
+    ? history.find(h => h.candidate_id === selected)
+    : lastResult
 
   return (
-    <div className="space-y-12 animate-in fade-in slide-in-from-right-6 duration-1000">
-      {/* Breadcrumbs & Header */}
-      <header>
-        <Link to="/" className="group flex items-center gap-2 text-slate-500 hover:text-blue-400 transition-all text-sm mb-6 font-medium">
-          <ArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" />
-          Back to Dashboard
-        </Link>
-        <div className="flex items-center justify-between">
-           <div className="flex items-center gap-8">
-              <div className="w-20 h-20 bg-blue-500/10 rounded-3xl flex items-center justify-center border border-blue-500/20 shadow-blue-500/5 shadow-2xl relative">
-                <Briefcase className="w-10 h-10 text-blue-500" />
-                <div className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border-4 border-[#0a0a0b] shadow-lg shadow-emerald-500/20" />
-              </div>
-              <div>
-                <h2 className="text-4xl font-bold tracking-tight text-white mb-2">{job?.title}</h2>
-                <div className="flex items-center gap-4 text-slate-400 font-medium">
-                   <div className="flex items-center gap-1.5 px-3 py-1 bg-white/5 rounded-lg border border-white/5">
-                      <Award className="w-3.5 h-3.5 text-blue-400" />
-                      <span className="text-xs uppercase tracking-wider">{job?.required_education}</span>
-                   </div>
-                   <span className="w-1 h-1 rounded-full bg-slate-700" />
-                   <div className="flex items-center gap-1.5 px-3 py-1 bg-white/5 rounded-lg border border-white/5">
-                      <Target className="w-3.5 h-3.5 text-blue-400" />
-                      <span className="text-xs uppercase tracking-wider">{job?.min_experience}+ Years Exp</span>
-                   </div>
-                </div>
-              </div>
-           </div>
-           <div className="flex items-center gap-4">
-              <div className="px-6 py-3 rounded-2xl glass border-emerald-500/10 shadow-emerald-500/5 group hover:border-emerald-500/20 transition-all">
-                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Qualified Hires</p>
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-emerald-500/50 shadow-[0_0_8px]" />
-                  <span className="text-xl font-bold text-white">{candidates.length}</span>
-                </div>
-              </div>
-           </div>
-        </div>
-      </header>
+    <div className="space-y-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {/* Breadcrumb */}
+      <Link to="/jobs" className="inline-flex items-center gap-2 text-slate-500 hover:text-blue-400 transition-colors text-sm font-medium">
+        <ArrowLeft className="w-4 h-4" />
+        Back to Jobs
+      </Link>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-        {/* Left Column: Role Details & Actions */}
-        <div className="space-y-8">
-           <div className="glass rounded-[2.5rem] p-8 border border-white/5">
-              <h3 className="text-lg font-bold mb-6 flex items-center gap-3">
-                 <BrainCircuit className="w-5 h-5 text-blue-400" />
-                 Contextual Analysis
+      {/* Job Header */}
+      <div className="glass-card !p-10">
+        <div className="flex items-start justify-between gap-6">
+          <div className="flex items-start gap-6">
+            <div className="w-16 h-16 bg-blue-500/10 rounded-2xl flex items-center justify-center border border-blue-500/20 flex-shrink-0">
+              <Briefcase className="w-8 h-8 text-blue-400" />
+            </div>
+            <div>
+              <h2 className="text-3xl font-bold text-white mb-3">{job.title}</h2>
+              <div className="flex flex-wrap gap-2 mb-4">
+                {(job.required_skills || []).map(skill => (
+                  <span key={skill} className="px-3 py-1 bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-lg text-xs font-bold uppercase tracking-wide">
+                    {skill}
+                  </span>
+                ))}
+              </div>
+              <div className="flex items-center gap-4 text-sm text-slate-500">
+                <span><span className="text-white font-semibold">{job.min_experience}+</span> yrs exp</span>
+                <span>·</span>
+                <span>{job.required_education}</span>
+              </div>
+            </div>
+          </div>
+          <div className="text-right flex-shrink-0">
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Candidates</div>
+            <div className="text-4xl font-bold text-white">{history.length}</div>
+          </div>
+        </div>
+        {job.description && (
+          <div className="mt-8 pt-8 border-t border-white/5">
+            <p className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-3">Job Description</p>
+            <p className="text-sm text-slate-400 leading-relaxed">{job.description}</p>
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 xl:grid-cols-5 gap-8">
+        {/* Upload + Candidate list */}
+        <div className="xl:col-span-2 space-y-6">
+          <ResumeUpload jobId={id} onComplete={handleUploadComplete} />
+
+          {/* Candidate list */}
+          {history.length > 0 && (
+            <div className="glass rounded-[2rem] p-6 border border-white/5">
+              <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2">
+                <Users className="w-4 h-4 text-blue-400" />
+                Screened Candidates ({history.length})
               </h3>
-              <p className="text-sm text-slate-400 leading-relaxed mb-10">
-                {job?.description}
-              </p>
-              
-              <h3 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-6">Semantic Filter Stack</h3>
-              <div className="flex flex-wrap gap-2.5">
-                 {job?.required_skills.map(skill => (
-                   <span key={skill} className="px-4 py-2 bg-white/5 rounded-xl border border-white/5 text-xs text-slate-300 hover:bg-blue-600/10 hover:text-blue-400 hover:border-blue-500/10 transition-all duration-300">
-                     {skill}
-                   </span>
-                 ))}
+              <div className="space-y-2">
+                {history
+                  .sort((a, b) => (b.final_score || 0) - (a.final_score || 0))
+                  .map(h => {
+                    const score = h.final_score ?? 0
+                    const color = score >= 70 ? 'text-emerald-400' : score >= 40 ? 'text-amber-400' : 'text-red-400'
+                    const bg = score >= 70 ? 'hover:border-emerald-500/30' : score >= 40 ? 'hover:border-amber-500/30' : 'hover:border-red-500/30'
+                    return (
+                      <button
+                        key={h.candidate_id}
+                        onClick={() => setSelected(h.candidate_id)}
+                        className={`w-full flex items-center justify-between px-4 py-3 rounded-xl bg-white/[0.02] border border-white/5 ${bg} transition-all text-left group ${selected === h.candidate_id ? 'border-blue-500/40 bg-blue-500/5' : ''}`}
+                      >
+                        <div>
+                          <p className="text-sm font-semibold text-slate-200 group-hover:text-white">{h.candidate_name}</p>
+                          <p className="text-xs text-slate-600">{new Date(h.created_at || Date.now()).toLocaleDateString()}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-lg font-bold ${color}`}>{Math.round(score)}%</span>
+                          <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-slate-300" />
+                        </div>
+                      </button>
+                    )
+                  })}
               </div>
-           </div>
-
-           <ResumeUpload jobId={id} onComplete={() => window.location.reload()} />
+            </div>
+          )}
         </div>
 
-        {/* Right Column: Candidate Matching Index */}
-        <div className="lg:col-span-2">
-           {selectedResult ? (
-             <div className="space-y-6">
-                <button 
-                  onClick={() => setSelectedResult(null)}
-                  className="px-6 py-3 bg-white/5 hover:bg-white/10 rounded-2xl text-xs font-bold transition-all border border-white/5 uppercase tracking-widest text-blue-400 shadow-lg"
-                >
-                  Close Match Viewer
-                </button>
-                <ResultViewer result={selectedResult} />
-             </div>
-           ) : (
-             <div className="glass rounded-[2.5rem] p-10 border border-white/5 min-h-[600px] flex flex-col">
-                <div className="flex items-center justify-between mb-10">
-                  <header>
-                    <h3 className="text-2xl font-bold mb-1 text-white">Matching Index</h3>
-                    <p className="text-xs text-slate-500 font-medium uppercase tracking-widest">Neural Ranking Pipeline</p>
-                  </header>
-                  <div className="flex items-center gap-2 px-4 py-2 bg-blue-600/10 rounded-xl border border-blue-500/20">
-                     <Zap className="w-4 h-4 text-blue-400 animate-pulse" />
-                     <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mt-0.5">Automated Matcher Online</span>
+        {/* Results Panel */}
+        <div className="xl:col-span-3 space-y-6">
+          {selectedResult ? (
+            <>
+              <ScoreRadar result={selectedResult} />
+              <InterviewQuestions questions={selectedResult.interview_questions || []} />
+              <Suggestions suggestions={selectedResult.suggestions || selectedResult.ats_breakdown?.suggestions || []} />
+              {/* LLM Evaluation */}
+              {selectedResult.llm_evaluation && (
+                <div className="glass rounded-[2rem] p-8 border border-white/5 bg-gradient-to-br from-blue-600/5 to-transparent">
+                  <div className="flex items-center gap-3 mb-6">
+                    <div className="w-9 h-9 bg-blue-500/10 rounded-xl flex items-center justify-center border border-blue-500/20">
+                      <Brain className="w-5 h-5 text-blue-400" />
+                    </div>
+                    <h3 className="font-bold text-white text-sm">AI Evaluation</h3>
+                  </div>
+                  <div className="space-y-3">
+                    {(selectedResult.llm_evaluation || '').split('\n').filter(Boolean).map((line, i) => (
+                      <p key={i} className="text-sm text-slate-400 leading-relaxed">{line}</p>
+                    ))}
                   </div>
                 </div>
-
-                <div className="space-y-4 flex-1">
-                   {candidates.length === 0 ? (
-                     <div className="flex-1 flex flex-col items-center justify-center py-20 bg-white/[0.01] rounded-[2rem] border border-dashed border-white/10">
-                        <FileText className="w-16 h-16 text-slate-800 mx-auto mb-6" />
-                        <p className="text-slate-500 font-medium">Capture incoming resumes to populate Neural Matching.</p>
-                     </div>
-                   ) : (
-                     candidates.sort((a,b) => b.final_score - a.final_score).map((cand, i) => (
-                       <div 
-                        key={cand.id} 
-                        onClick={() => setSelectedResult(cand.analysis)} 
-                        className="group flex items-center justify-between p-6 rounded-3xl bg-white/[0.02] border border-white/5 hover:bg-blue-600/5 hover:border-blue-500/40 transition-all duration-300 cursor-pointer animate-in fade-in slide-in-from-right-4"
-                        style={{ animationDelay: `${i * 100}ms` }}
-                       >
-                          <div className="flex items-center gap-6">
-                             <div className="w-14 h-14 rounded-2xl bg-slate-900 flex items-center justify-center font-bold text-blue-500 border border-white/5 group-hover:border-blue-500/20 shadow-inner group-hover:bg-blue-500/10 transition-all">
-                                {cand.candidate_name?.[0] || 'C'}
-                             </div>
-                             <div>
-                                <h4 className="text-lg font-bold group-hover:text-blue-400 transition-all text-white mb-1">{cand.candidate_name || `Ref #${cand.candidate_id}`}</h4>
-                                <div className="flex items-center gap-2">
-                                  <div className="w-1.5 h-1.5 rounded-full bg-blue-500/50" />
-                                  <p className="text-xs text-slate-500 font-medium tracking-wide">Processed {new Date(cand.created_at).toLocaleDateString()}</p>
-                                </div>
-                             </div>
-                          </div>
-                          <div className="flex items-center gap-8">
-                             <div className="text-right">
-                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-[0.2em] mb-2">Neural Match</p>
-                                <div className="flex items-center gap-2.5">
-                                   <div className="w-16 h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
-                                      <div className="h-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]" style={{ width: `${cand.final_score}%` }} />
-                                   </div>
-                                   <span className="text-2xl font-bold font-display text-white">{cand.final_score}%</span>
-                                </div>
-                             </div>
-                             <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center border border-white/5 group-hover:translate-x-1 transition-transform group-hover:border-blue-500/20">
-                                <ChevronRight className="w-5 h-5 text-slate-600 group-hover:text-blue-400" />
-                             </div>
-                          </div>
-                       </div>
-                     ))
-                   )}
-                </div>
-             </div>
-           )}
+              )}
+            </>
+          ) : (
+            <div className="glass rounded-[2rem] p-16 border border-dashed border-white/10 flex flex-col items-center justify-center text-center">
+              <Zap className="w-14 h-14 text-slate-700 mb-6" />
+              <h3 className="text-lg font-bold text-slate-400 mb-2">Upload a resume to begin</h3>
+              <p className="text-slate-600 text-sm max-w-xs leading-relaxed">
+                The 5-agent AI pipeline will analyse the candidate and show their radar chart, interview questions, and improvement suggestions here.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from ..models import models
 import json
 
@@ -40,3 +41,50 @@ def create_screening_result(db: Session, candidate_id: int, job_id: int, ats_sco
 
 def get_job_posting(db: Session, job_id: int):
     return db.query(models.JobPosting).filter(models.JobPosting.id == job_id).first()
+
+def get_all_candidates(db: Session):
+    """Return all candidates joined with their latest screening result and job title."""
+    candidates = db.query(models.Candidate).all()
+    result = []
+    for cand in candidates:
+        # Get most recent screening result
+        screening = (
+            db.query(models.ScreeningResult)
+            .filter(models.ScreeningResult.candidate_id == cand.id)
+            .order_by(models.ScreeningResult.created_at.desc())
+            .first()
+        )
+        job_title = None
+        if screening:
+            job = db.query(models.JobPosting).filter(models.JobPosting.id == screening.job_id).first()
+            job_title = job.title if job else None
+
+        result.append({
+            "id": cand.id,
+            "name": cand.name,
+            "email": cand.email,
+            "phone": cand.phone,
+            "uploaded_at": cand.uploaded_at,
+            "final_score": screening.final_score if screening else None,
+            "status": screening.status if screening else "pending",
+            "job_title": job_title,
+            "job_id": screening.job_id if screening else None,
+        })
+    return result
+
+# ─── Notification CRUD ───────────────────────────────────────────────────────
+
+def create_notification(db: Session, user_id: int, message: str):
+    notif = models.Notification(user_id=user_id, message=message)
+    db.add(notif)
+    db.commit()
+    db.refresh(notif)
+    return notif
+
+def get_user_notifications(db: Session, user_id: int):
+    return (
+        db.query(models.Notification)
+        .filter(models.Notification.user_id == user_id)
+        .order_by(models.Notification.created_at.desc())
+        .all()
+    )
