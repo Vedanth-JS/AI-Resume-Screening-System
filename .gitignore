@@ -29,3 +29,5 @@ Thumbs.db
 # Project Specific
 test_data/
 vite.config.js.timestamp-*
+backend/vector_db/
+*.log

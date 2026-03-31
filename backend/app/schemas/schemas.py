@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, ConfigDict
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
@@ -11,8 +11,7 @@ class UserCreate(UserBase):
 
 class UserResponse(UserBase):
     id: int
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class Token(BaseModel):
     access_token: str
@@ -35,8 +34,7 @@ class JobCreate(JobBase):
 class JobResponse(JobBase):
     id: int
     created_at: datetime
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class CandidateBase(BaseModel):
     name: str
@@ -47,8 +45,7 @@ class CandidateResponse(CandidateBase):
     id: int
     uploaded_at: datetime
     parsed_json: Optional[Dict[str, Any]] = None
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ScreeningResultResponse(BaseModel):
     candidate_id: int
@@ -59,12 +56,10 @@ class ScreeningResultResponse(BaseModel):
     explanation: Optional[str] = None
     status: str
     created_at: datetime
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class BiasReportResponse(BaseModel):
     job_id: int
     report_json: Dict[str, Any]
     generated_at: datetime
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

@@ -8,15 +8,43 @@ from ..core.pipeline import ATSWorkflow
 from ..core.chatbot import CandidateChatbot
 from ..core.bias_detector import BiasDetector
 from ..api.auth import get_current_user
+from ..core.scorer import Scorer
 from typing import List
-import json
-
 router = APIRouter()
 workflow = ATSWorkflow()
 
 @router.post("/jobs", response_model=schemas.JobResponse)
 def create_job(job: schemas.JobCreate, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
     return crud.create_job_posting(db, job.title, job.description, job.required_skills, job.min_experience, job.required_education, current_user.id)
+
+@router.get("/jobs", response_model=List[schemas.JobResponse])
+def get_jobs(db: Session = Depends(get_db)):
+    return db.query(models.JobPosting).all()
+
+@router.get("/jobs/{job_id}", response_model=schemas.JobResponse)
+def get_job(job_id: int, db: Session = Depends(get_db)):
+    job = crud.get_job_posting(db, job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+@router.get("/history/{job_id}")
+async def get_screening_history(job_id: int, db: Session = Depends(get_db)):
+    results = db.query(models.ScreeningResult).filter(models.ScreeningResult.job_id == job_id).all()
+    # Join with candidate info
+    history = []
+    for r in results:
+        cand = db.query(models.Candidate).filter(models.Candidate.id == r.candidate_id).first()
+        history.append({
+            "id": r.id,
+            "candidate_id": r.candidate_id,
+            "candidate_name": cand.name if cand else "Unknown",
+            "job_id": r.job_id,
+            "final_score": r.final_score,
+            "created_at": r.created_at,
+            "analysis": r.explanation
+        })
+    return history
 
 @router.post("/resume/upload")
 async def upload_resume(file: UploadFile = File(...), job_id: int = Form(...), db: Session = Depends(get_db), current_user = Depends(get_current_user)):

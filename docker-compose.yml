@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   api:
     build: ./backend
@@ -57,14 +55,28 @@ services:
     environment:
       - ALLOW_RESET=TRUE
 
+  dashboard:
+    build: ./backend
+    command: streamlit run frontend/dashboard.py --server.port 8501 --server.address 0.0.0.0
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./backend:/app
+    environment:
+      - API_URL=http://api:8000
+    depends_on:
+      - api
   frontend:
     build: ./frontend
     ports:
       - "5173:5173"
     volumes:
       - ./frontend:/app
+      - /app/node_modules/
     environment:
-      - VITE_API_URL=http://localhost:8000
+      - VITE_API_URL=http://localhost:8000/api
+    depends_on:
+      - api
 
 volumes:
   postgres_data:
