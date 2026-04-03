@@ -1,139 +1,267 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, status
-from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, status, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func, desc
 from ..db.database import get_db
-from ..db import crud
+from ..db.repositories.job_repo import JobRepository
+from ..db.repositories.candidate_repo import CandidateRepository
+from ..db.repositories.application_repo import ApplicationRepository
 from ..models import models
-from ..schemas import schemas
+from ..schemas import schemas, auth
 from ..core.pipeline import ATSWorkflow
-from ..core.chatbot import CandidateChatbot
-from ..core.bias_detector import BiasDetector
-from ..api.auth import get_current_user, check_admin
-from ..core.scorer import Scorer
+from ..embeddings.search import SemanticSearch
+from ..agents.orchestrator import ScreeningOrchestrator
+from ..api.auth import get_current_user_with_role, RoleEnum
+from ..bias.anonymizer import CandidateAnonymizer
+from ..scoring.ats_scorer import ATSScorer
+from ..services.feedback_service import FeedbackService
 from ..core.logger import log
-from typing import List
-from datetime import datetime
-import zipfile, io, csv
-
-from ..tasks.celery_tasks import process_resume_task, process_batch_task
+from typing import List, Optional, Dict, Any
+import zipfile, io, time, csv
+from fastapi.responses import StreamingResponse
 
 router = APIRouter()
 workflow = ATSWorkflow()
 
-# ─────────────────────────────────────────
-# JOB POSTINGS
-# ─────────────────────────────────────────
+# ─── Auth Dependency Short-cuts ─────────────────────────────────────────────
+AdminOnly = get_current_user_with_role(RoleEnum.ADMIN)
+RecruiterOnly = get_current_user_with_role(RoleEnum.RECRUITER)
+ViewerOnly = get_current_user_with_role(RoleEnum.VIEWER)
+
+# ─── Job Management ─────────────────────────────────────────────────────────
 
 @router.post("/jobs", response_model=schemas.JobResponse)
-def create_job(job: schemas.JobCreate, db: Session = Depends(get_db), current_user = Depends(get_current_user)):
-    new_job = crud.create_job_posting(db, job.title, job.description, job.required_skills, job.min_experience, job.required_education, current_user.id)
-    crud.create_notification(db, current_user.id, f"New job posted: {new_job.title}")
+async def create_job(job: schemas.JobCreate, request: Request, db: AsyncSession = Depends(get_db), current_user = Depends(RecruiterOnly)):
+    repo = JobRepository(db)
+    new_job = await repo.create(
+        org_id=request.state.org_id,
+        title=job.title,
+        description=job.description,
+        required_skills=job.required_skills,
+        min_experience=job.min_experience,
+        status="active"
+    )
     return new_job
 
 @router.get("/jobs", response_model=List[schemas.JobResponse])
-def get_jobs(db: Session = Depends(get_db)):
-    return db.query(models.JobPosting).all()
+async def get_jobs(request: Request, db: AsyncSession = Depends(get_db), current_user = Depends(ViewerOnly)):
+    repo = JobRepository(db)
+    return await repo.list_by_org(request.state.org_id)
 
 @router.get("/jobs/{job_id}", response_model=schemas.JobResponse)
-def get_job(job_id: int, db: Session = Depends(get_db)):
-    job = crud.get_job_posting(db, job_id)
+async def get_job(job_id: int, request: Request, db: AsyncSession = Depends(get_db), current_user = Depends(ViewerOnly)):
+    repo = JobRepository(db)
+    job = await repo.get_by_id_org(job_id, request.state.org_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
 
-@router.post("/jobs/refresh")
-def refresh_jobs(admin: models.User = Depends(check_admin), db: Session = Depends(get_db)):
-    from app.services.job_fetcher import fetch_jobs
-    external_jobs = fetch_jobs()
-    for job in external_jobs:
-        crud.create_job_posting(
-            db,
-            title=job["title"],
-            description=job["description"],
-            skills=job["skills"],
-            min_exp=job["min_exp"],
-            edu=job["edu"],
-            user_id=admin.id,
-        )
-        crud.create_notification(db, admin.id, f"Refreshed job: {job['title']}")
-    return {"detail": f"Added {len(external_jobs)} jobs"}
-
-# ─────────────────────────────────────────
-# CANDIDATES
-# ─────────────────────────────────────────
-
-@router.get("/candidates", response_model=List[schemas.CandidateWithScore])
-def get_candidates(db: Session = Depends(get_db), current_user=Depends(get_current_user)):
-    """Return all candidates with their latest screening score and job title."""
-    return crud.get_all_candidates(db)
-
-@router.get("/score/{candidate_id}")
-async def get_candidate_score(candidate_id: int, db: Session = Depends(get_db)):
-    result = db.query(models.ScreeningResult).filter(models.ScreeningResult.candidate_id == candidate_id).first()
-    if not result:
-        raise HTTPException(status_code=404, detail="Score not found")
-    return result
-
-@router.get("/recommend-jobs/{candidate_id}")
-async def recommend_jobs(candidate_id: int, db: Session = Depends(get_db)):
-    candidate = db.query(models.Candidate).filter(models.Candidate.id == candidate_id).first()
-    if not candidate:
-        raise HTTPException(status_code=404, detail="Candidate not found")
-    jobs = db.query(models.JobPosting).all()
-    recommendations = []
-    for job in jobs:
-        score = Scorer.get_similarity(candidate.raw_text, job.description)
-        recommendations.append({
-            "job_id": job.id,
-            "title": job.title,
-            "match_score": round(score * 100, 2)
-        })
-    recommendations.sort(key=lambda x: x["match_score"], reverse=True)
-    return recommendations[:5]
-
-# ─────────────────────────────────────────
-# RESUME UPLOAD
-# ─────────────────────────────────────────
-
-@router.get("/history/{job_id}")
-async def get_screening_history(job_id: int, db: Session = Depends(get_db)):
-    results = db.query(models.ScreeningResult).filter(models.ScreeningResult.job_id == job_id).all()
-    history = []
-    for r in results:
-        cand = db.query(models.Candidate).filter(models.Candidate.id == r.candidate_id).first()
-        history.append({
-            "id": r.id,
-            "candidate_id": r.candidate_id,
-            "candidate_name": cand.name if cand else "Unknown",
-            "job_id": r.job_id,
-            "final_score": r.final_score,
-            "created_at": r.created_at,
-            "analysis": r.explanation
-        })
-    return history
+# ─── Candidate & Screening ──────────────────────────────────────────────────
 
 @router.post("/resume/upload")
-async def upload_resume(file: UploadFile = File(...), job_id: int = Form(...), db: Session = Depends(get_db), current_user = Depends(get_current_user)):
-    content = await file.read()
-    job = crud.get_job_posting(db, job_id)
+async def upload_resume(
+    request: Request,
+    file: UploadFile = File(...),
+    job_id: int = Form(...),
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(RecruiterOnly)
+):
+    # 1. Fetch Job
+    job_repo = JobRepository(db)
+    job = await job_repo.get_by_id_org(job_id, request.state.org_id)
     if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    result = await workflow.process(content, file.filename, job.description, job.required_skills, job.min_experience)
-    candidate = crud.create_candidate(
-        db, name=result["candidate"]["name"], email=result["candidate"]["email"],
-        phone=result["candidate"]["phone"], raw_text=result["candidate"]["raw_text"],
-        parsed_json=result["candidate"]
+        raise HTTPException(404, "Job not found")
+    
+    # 2. Run Pipeline
+    content = await file.read()
+    result = await workflow.process(
+        content, file.filename, job.description, 
+        job.required_skills, job.min_experience, request.state.org_id
     )
-    crud.create_screening_result(
-        db, candidate.id, job.id, result["final_result"]["final_score"],
-        0.0, result["final_result"]["final_score"], result["final_result"]["explanation"]
+    
+    # 3. Save Candidate
+    cand_repo = CandidateRepository(db)
+    candidate = await cand_repo.create(
+        org_id=request.state.org_id,
+        name=result["candidate"]["name"],
+        email=result["candidate"]["email"],
+        phone=result["candidate"]["phone"],
+        raw_text=result["candidate"]["raw_text"],
+        parsed_json=result["candidate"],
+        status="new"
     )
-    CandidateChatbot.add_candidate(candidate.id, candidate.raw_text, {"name": candidate.name, "email": candidate.email, "job_id": job.id})
-    return {"message": "Success", "candidate_id": candidate.id, "analysis": result}
+    
+    # 4. Save Application & Result
+    app_repo = ApplicationRepository(db)
+    application = await app_repo.create(
+        org_id=request.state.org_id,
+        candidate_id=candidate.id,
+        job_id=job.id,
+        score=result["score"],
+        status="SCREENED"
+    )
+    
+    # 5. Index for RAG
+    rag = RAGService(db)
+    await rag.index_candidate(candidate)
+    
+    return {"message": "Success", "application_id": application.id, "analysis": result}
+
+@router.post("/applications/{application_id}/feedback")
+async def get_candidate_feedback(
+    application_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(RecruiterOnly)
+):
+    """Generates personalized feedback using Gemini."""
+    stmt = select(models.Application).where(models.Application.id == application_id)
+    app = (await db.execute(stmt)).scalars().first()
+    if not app:
+        raise HTTPException(404, "Application not found")
+        
+    candidate = await CandidateRepository(db).get(app.candidate_id)
+    screening = await db.execute(select(models.ScreeningResult).where(models.ScreeningResult.application_id == app.id))
+    result = screening.scalars().first()
+    
+    feedback = await FeedbackService.generate_candidate_feedback(
+        candidate.raw_text, 
+        {"overall_score": app.score, "reasoning": result.reasoning if result else ""}
+    )
+    return feedback
+
+@router.post("/screen/anonymous")
+async def screen_anonymous(
+    candidate_id: int,
+    job_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(RecruiterOnly)
+):
+    """Runs a bias-masked screening to compare with standard scores."""
+    candidate = await CandidateRepository(db).get(candidate_id)
+    job = await JobRepository(db).get_by_id_org(job_id, current_user.org_id)
+    
+    anonymizer = CandidateAnonymizer()
+    masked_data = anonymizer.mask_candidate_metadata({
+        "email": candidate.email,
+        "raw_text": candidate.raw_text
+    })
+    
+    scorer = ATSScorer()
+    res = scorer.score(masked_data, {"description": job.description, "required_skills": job.required_skills})
+    
+    return {
+        "original_score": candidate.status, # Placeholder or fetch actual
+        "anonymized_score": res["total_score"],
+        "diff": 0, # Logic to compare
+        "bias_flags": []
+    }
+
+@router.post("/jobs/{job_id}/match-candidates")
+async def match_candidates_for_job(
+    job_id: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(RecruiterOnly)
+):
+    job = await JobRepository(db).get_by_id_org(job_id, request.state.org_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+        
+    search_service = SemanticSearch(db)
+    matches = await search_service.find_matches_for_job(
+        job_id=job.id,
+        job_description=job.description,
+        org_id=request.state.org_id
+    )
+    return {"matches_found": len(matches), "candidates": matches}
+
+# ─── Interview Assistant ────────────────────────────────────────────────────
+
+@router.post("/candidates/{candidate_id}/interview-questions")
+async def generate_interview_kit(
+    candidate_id: int, 
+    job_id: int, 
+    focus_areas: List[str] = Form(...), 
+    difficulty: str = Form("MID"),
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(RecruiterOnly)
+):
+    # 1. Fetch data
+    job = await JobRepository(db).get_by_id_org(job_id, request.state.org_id)
+    candidate = await CandidateRepository(db).get(candidate_id) # Should check org_id too
+    
+    # 2. Call Gemini for Questions
+    questions = await LLMService.generate_interview_questions(
+        candidate_name=candidate.name,
+        jd_text=job.description,
+        resume_gaps=focus_areas # Or use focus_areas directly
+    )
+    
+    # 3. Save kit
+    kit = models.InterviewKit(
+        job_id=job_id,
+        candidate_id=candidate_id,
+        focus_areas=focus_areas,
+        difficulty=difficulty,
+        questions=questions
+    )
+    db.add(kit)
+    await db.commit()
+    return kit
+
+@router.post("/interviews/{kit_id}/scorecard")
+async def submit_scorecard(
+    kit_id: int,
+    scores: dict,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(RecruiterOnly)
+):
+    # Logic to calculate total and get AI recommendation
+    total = sum(scores.values()) / len(scores) if scores else 0
+    rec = "Strong Hire" if total > 4 else "Hire" if total > 3 else "No Hire"
+    
+    scorecard = models.InterviewScorecard(
+        kit_id=kit_id,
+        recruiter_id=current_user.id,
+        scores=scores,
+        total_score=total,
+        ai_recommendation=rec
+    )
+    db.add(scorecard)
+    await db.commit()
+    return scorecard
+
+# ─── Comparison Mode ────────────────────────────────────────────────────────
+
+@router.get("/jobs/{job_id}/compare")
+async def compare_candidates(
+    job_id: int, 
+    candidate_ids: str, # "1,2,3"
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(ViewerOnly)
+):
+    ids = [int(i) for i in candidate_ids.split(",")]
+    repo = CandidateRepository(db)
+    candidates = []
+    for cid in ids:
+        c = await repo.get(cid)
+        if c and c.org_id == request.state.org_id:
+            candidates.append(c)
+            
+    # AI Summary
+    summary = await LLMService.compare_candidates(
+        jd="...", # Fetch job
+        resume1=candidates[0].raw_text if len(candidates) > 0 else "",
+        resume2=candidates[1].raw_text if len(candidates) > 1 else ""
+    )
+    
+    return {"candidates": candidates, "ai_comparison": summary}
 
 @router.post("/bulk-upload")
-async def bulk_upload_resumes(file: UploadFile = File(...), job_id: int = Form(...), db: Session = Depends(get_db), current_user = Depends(get_current_user)):
-    job = crud.get_job_posting(db, job_id)
+async def bulk_upload_resumes(file: UploadFile = File(...), job_id: int = Form(...), db: AsyncSession = Depends(get_db), current_user = Depends(RecruiterOnly)):
+    job = await JobRepository(db).get_by_id_org(job_id, current_user.org_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     if not file.filename.endswith(".zip"):
@@ -157,9 +285,9 @@ async def bulk_upload_resumes(file: UploadFile = File(...), job_id: int = Form(.
 # ─────────────────────────────────────────
 
 @router.post("/llm/evaluate")
-async def evaluate_candidate_llm(candidate_id: int, job_id: int, db: Session = Depends(get_db)):
-    candidate = db.query(models.Candidate).filter(models.Candidate.id == candidate_id).first()
-    job = crud.get_job_posting(db, job_id)
+async def evaluate_candidate_llm(candidate_id: int, job_id: int, request: Request, db: AsyncSession = Depends(get_db), current_user = Depends(RecruiterOnly)):
+    candidate = await CandidateRepository(db).get_by_id_org(candidate_id, current_user.org_id)
+    job = await JobRepository(db).get_by_id_org(job_id, current_user.org_id)
     if not candidate or not job:
         raise HTTPException(status_code=404, detail="Candidate or Job not found")
     from ..services.llm_service import LLMService
@@ -167,31 +295,38 @@ async def evaluate_candidate_llm(candidate_id: int, job_id: int, db: Session = D
     return {"evaluation": evaluation}
 
 @router.post("/chat")
-async def chat_candidates(query: str):
-    results = CandidateChatbot.query_candidates(query)
+async def chat_candidates(query: str, request: Request, db: AsyncSession = Depends(get_db), current_user = Depends(ViewerOnly)):
+    rag = RAGService(db)
+    results = await rag.search_candidates(query, current_user.org_id)
     return {"results": results}
 
 @router.get("/bias-report")
-async def get_bias_report(job_id: int, db: Session = Depends(get_db)):
-    job = crud.get_job_posting(db, job_id)
+async def get_bias_report(job_id: int, db: AsyncSession = Depends(get_db), current_user = Depends(ViewerOnly)):
+    job = await JobRepository(db).get_by_id_org(job_id, current_user.org_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     report = BiasDetector.detect_bias(job.description)
     return report
 
 @router.get("/metrics")
-async def get_metrics(db: Session = Depends(get_db)):
-    results = db.query(models.ScreeningResult).all()
+async def get_metrics(request: Request, db: AsyncSession = Depends(get_db), current_user = Depends(ViewerOnly)):
+    org_id = current_user.org_id
+    stmt = select(models.Application).where(models.Application.org_id == org_id)
+    res = await db.execute(stmt)
+    results = res.scalars().all()
+    
     if not results:
-        return {"count": 0, "avg_score": 0, "average_score": 0, "accept": 0, "review": 0, "reject": 0}
-    avg = sum(r.final_score for r in results) / len(results)
-    accept = sum(1 for r in results if r.final_score >= 70)
-    review = sum(1 for r in results if 40 <= r.final_score < 70)
-    reject = sum(1 for r in results if r.final_score < 40)
+        return {"count": 0, "average_score": 0, "accept": 0, "review": 0, "reject": 0}
+    
+    scores = [r.score for r in results if r.score is not None]
+    avg = sum(scores) / len(scores) if scores else 0
+    accept = sum(1 for s in scores if s >= 70)
+    review = sum(1 for s in scores if 40 <= s < 70)
+    reject = sum(1 for s in scores if s < 40)
+    
     return {
         "count": len(results),
         "average_score": round(avg, 2),
-        "avg_score": round(avg, 2),
         "accept": accept,
         "review": review,
         "reject": reject
@@ -203,30 +338,25 @@ async def get_metrics(db: Session = Depends(get_db)):
 # ─────────────────────────────────────────
 
 @router.get("/tasks/{task_id}/status")
-def get_task_status(task_id: str, db: Session = Depends(get_db)):
-    """Poll status of a Celery task. Returns status, progress, and result when done."""
-    record = db.query(models.TaskRecord).filter(
-        models.TaskRecord.celery_task_id == task_id
-    ).first()
+async def get_task_status(task_id: str, db: AsyncSession = Depends(get_db), current_user = Depends(ViewerOnly)):
+    """Poll status of a Celery task."""
+    stmt = select(models.TaskRecord).where(
+        models.TaskRecord.celery_task_id == task_id,
+        models.TaskRecord.org_id == current_user.org_id
+    )
+    res = await db.execute(stmt)
+    record = res.scalars().first()
+    
     if not record:
-        # Also check Celery backend directly
-        from ..tasks.celery_tasks import celery_app
-        result = celery_app.AsyncResult(task_id)
-        return {
-            "task_id": task_id,
-            "status":  result.state.lower() if result.state else "unknown",
-            "progress": 100 if result.state == "SUCCESS" else 0,
-            "result":  result.result if result.ready() else None,
-        }
+        return {"status": "unknown"}
 
     return {
-        "task_id":     task_id,
-        "status":      record.status,
-        "progress":    record.progress,
-        "result":      record.result_json,
-        "error":       record.error,
-        "created_at":  record.created_at.isoformat() if record.created_at else None,
-        "completed_at":record.completed_at.isoformat() if record.completed_at else None,
+        "task_id": task_id,
+        "status": record.status,
+        "progress": record.progress,
+        "result": record.result_json,
+        "error": record.error,
+        "completed_at": record.completed_at.isoformat() if record.completed_at else None,
     }
 
 
@@ -238,13 +368,13 @@ def get_task_status(task_id: str, db: Session = Depends(get_db)):
 async def batch_upload(
     file: UploadFile = File(...),
     job_id: int = Form(...),
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(RecruiterOnly),
 ):
     """Accept a ZIP of resumes + a job_id. Returns batch_id for polling."""
     if not file.filename.endswith(".zip"):
         raise HTTPException(400, "Only ZIP files accepted.")
-    job = crud.get_job_posting(db, job_id)
+    job = await JobRepository(db).get_by_id_org(job_id, current_user.org_id)
     if not job:
         raise HTTPException(404, "Job not found.")
 
@@ -291,32 +421,32 @@ async def batch_upload(
 
 
 @router.get("/batch/{batch_id}/results")
-def get_batch_results(batch_id: int, db: Session = Depends(get_db), current_user=Depends(get_current_user)):
+async def get_batch_results(batch_id: int, db: AsyncSession = Depends(get_db), current_user = Depends(ViewerOnly)):
     """Get results for a completed batch job."""
-    batch = db.query(models.BatchJob).filter(models.BatchJob.id == batch_id).first()
+    stmt = select(models.BatchJob).where(models.BatchJob.id == batch_id, models.BatchJob.org_id == current_user.org_id)
+    batch = (await db.execute(stmt)).scalars().first()
     if not batch:
         raise HTTPException(404, "Batch job not found.")
     return {
-        "batch_id":       batch.id,
-        "status":         batch.status,
-        "total_files":    batch.total_files,
-        "completed_files":batch.completed_files,
-        "progress_pct":   round((batch.completed_files / batch.total_files) * 100, 1) if batch.total_files else 0,
-        "results":        batch.result_json or [],
-        "created_at":     batch.created_at.isoformat() if batch.created_at else None,
-        "completed_at":   batch.completed_at.isoformat() if batch.completed_at else None,
+        "batch_id": batch.id,
+        "status": batch.status,
+        "total_files": batch.total_files,
+        "completed_files": batch.completed_files,
+        "progress_pct": round((batch.completed_files / batch.total_files) * 100, 1) if batch.total_files else 0,
+        "results": batch.result_json or [],
     }
 
 
 @router.get("/batch/{batch_id}/export")
-def export_batch_results(
+async def export_batch_results(
     batch_id: int,
-    format: str = "csv",
-    db: Session = Depends(get_db),
-    current_user=Depends(get_current_user),
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(RecruiterOnly),
 ):
     """Export batch results as CSV."""
-    batch = db.query(models.BatchJob).filter(models.BatchJob.id == batch_id).first()
+    stmt = select(models.BatchJob).where(models.BatchJob.id == batch_id, models.BatchJob.org_id == current_user.org_id)
+    batch = (await db.execute(stmt)).scalars().first()
     if not batch or not batch.result_json:
         raise HTTPException(404, "Batch results not available yet.")
 

@@ -28,3 +28,7 @@ streamlit
 pytest
 httpx
 pytest-asyncio
+pgvector
+prometheus_fastapi_instrumentator
+asyncpg
+reportlab

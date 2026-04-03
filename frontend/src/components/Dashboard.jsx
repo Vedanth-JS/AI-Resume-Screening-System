@@ -154,16 +154,16 @@ export function Dashboard() {
       try {
         const [jobsRes, metricsRes] = await Promise.all([
           jobService.getJobs(),
-          api.get('/metrics'),
+          api.get('/analytics/overview'),
         ])
         const jobList = jobsRes.data || []
         const m = metricsRes.data || {}
         setJobs(jobList)
         setMetrics(m)
         setStats([
-          { label: 'Total Candidates', value: String(m.count ?? 0), icon: Users, color: 'text-blue-400', bg: 'bg-blue-500/10' },
+          { label: 'Total Candidates', value: String(m.total_candidates ?? 0), icon: Users, color: 'text-blue-400', bg: 'bg-blue-500/10' },
           { label: 'Active Job Postings', value: String(jobList.length), icon: Briefcase, color: 'text-purple-400', bg: 'bg-purple-500/10' },
-          { label: 'Avg Match Rate', value: `${m.average_score ?? 0}%`, icon: TrendingUp, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+          { label: 'Avg Match Rate', value: `${m.avg_score ?? 0}%`, icon: TrendingUp, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
         ])
         // fetch candidate history for charts (top 5 jobs)
         const allCandidates = []

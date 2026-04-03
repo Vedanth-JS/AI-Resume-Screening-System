@@ -1,0 +1,9 @@
+{
+    "Fullstack": ["React", "Node", "PostgreSQL", "Full Stack", "MERN"],
+    "Frontend": ["React", "Vue", "Angular", "HTML", "CSS", "Next.js", "Tailwind"],
+    "Backend": ["FastAPI", "Django", "Flask", "Node.js", "Express", "Spring Boot"],
+    "Data Science": ["Python", "Pandas", "Scikit-Learn", "Machine Learning", "Deep Learning", "NLP"],
+    "Cloud": ["AWS", "GCP", "Azure", "Terraform", "Docker", "Kubernetes"],
+    "Mobile": ["React Native", "Flutter", "Swift", "Kotlin"],
+    "Database": ["PostgreSQL", "MongoDB", "Redis", "Elasticsearch", "SQL"]
+}

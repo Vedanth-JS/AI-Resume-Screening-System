@@ -1,17 +1,27 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Zap, Mail, Lock, Loader2, ArrowRight } from 'lucide-react';
 import { authService } from '../services/api';
+import { Link, useLocation } from 'react-router-dom';
 
 export function Login({ onLogin }) {
   const [email, setEmail] = useState('admin@ai-ats.com');
   const [password, setPassword] = useState('admin123');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const location = useLocation();
+
+  useEffect(() => {
+    if (location.state?.message) {
+      setSuccess(location.state.message);
+    }
+  }, [location]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+    setSuccess('');
     
     try {
       await authService.login(email, password);
@@ -74,6 +84,12 @@ export function Login({ onLogin }) {
               </div>
             </div>
 
+            {success && (
+              <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400 text-sm font-medium animate-in fade-in duration-500">
+                {success}
+              </div>
+            )}
+
             {error && (
               <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm font-medium animate-in shake duration-500">
                 {error}
@@ -94,6 +110,13 @@ export function Login({ onLogin }) {
                 </>
               )}
             </button>
+            
+            <div className="text-center pt-2">
+              <p className="text-sm text-slate-500">
+                Don't have an account?{' '}
+                <Link to="/register" className="text-blue-500 hover:text-blue-400 font-medium transition-colors font-display">Create Account</Link>
+              </p>
+            </div>
           </form>
         </div>
 

@@ -296,22 +296,41 @@ export function JobDetail() {
                     const color = score >= 70 ? 'text-emerald-400' : score >= 40 ? 'text-amber-400' : 'text-red-400'
                     const bg = score >= 70 ? 'hover:border-emerald-500/30' : score >= 40 ? 'hover:border-amber-500/30' : 'hover:border-red-500/30'
                     return (
-                      <button
-                        key={h.candidate_id}
-                        onClick={() => setSelected(h.candidate_id)}
-                        className={`w-full flex items-center justify-between px-4 py-3 rounded-xl bg-white/[0.02] border border-white/5 ${bg} transition-all text-left group ${selected === h.candidate_id ? 'border-blue-500/40 bg-blue-500/5' : ''}`}
-                      >
-                        <div>
-                          <p className="text-sm font-semibold text-slate-200 group-hover:text-white">{h.candidate_name}</p>
-                          <p className="text-xs text-slate-600">{new Date(h.created_at || Date.now()).toLocaleDateString()}</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`text-lg font-bold ${color}`}>{Math.round(score)}%</span>
-                          <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-slate-300" />
-                        </div>
-                      </button>
+                      <div key={h.candidate_id} className="relative group/parent">
+                        <button
+                          onClick={() => setSelected(h.candidate_id)}
+                          className={`w-full flex items-center justify-between px-4 py-3 rounded-xl bg-white/[0.02] border border-white/5 ${bg} transition-all text-left group ${selected === h.candidate_id ? 'border-blue-500/40 bg-blue-500/5' : ''}`}
+                        >
+                          <div>
+                            <p className="text-sm font-semibold text-slate-200 group-hover:text-white">{h.candidate_name}</p>
+                            <p className="text-xs text-slate-600">{new Date(h.created_at || Date.now()).toLocaleDateString()}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`text-lg font-bold ${color}`}>{Math.round(score)}%</span>
+                            <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-slate-300" />
+                          </div>
+                        </button>
+                        {selected === h.candidate_id && (
+                          <div className="flex gap-2 mt-2 px-2 animate-in slide-in-from-top-2 duration-300">
+                             <Link 
+                               to={`/interview/${h.candidate_id}?job_id=${id}`}
+                               className="flex-1 py-2 rounded-lg bg-blue-500/10 border border-blue-500/20 text-[10px] font-bold text-blue-400 text-center uppercase tracking-widest hover:bg-blue-500/20 transition-all"
+                             >
+                               Launch Interview
+                             </Link>
+                          </div>
+                        )}
+                      </div>
                     )
                   })}
+                {history.length >= 2 && (
+                   <Link 
+                     to={`/compare/${id}?ids=${history.slice(0,3).map(h => h.candidate_id).join(',')}`}
+                     className="block w-full mt-4 py-3 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-slate-400 text-center uppercase tracking-widest hover:bg-white/10 transition-colors"
+                   >
+                     Compare Top 3 Candidates
+                   </Link>
+                )}
               </div>
             </div>
           )}

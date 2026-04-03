@@ -71,6 +71,10 @@ class ScreeningResultResponse(BaseModel):
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
+class NotificationCreate(BaseModel):
+    user_id: int
+    message: str
+
 class NotificationResponse(BaseModel):
     id: int
     user_id: int
@@ -83,3 +87,7 @@ class BiasReportResponse(BaseModel):
     report_json: Dict[str, Any]
     generated_at: datetime
     model_config = ConfigDict(from_attributes=True)
+class SearchQuery(BaseModel):
+    query: str
+    top_k: Optional[int] = 20
+    filters: Optional[Dict[str, Any]] = None

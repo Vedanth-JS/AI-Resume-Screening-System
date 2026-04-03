@@ -13,9 +13,27 @@ from ..core.logger import log
 if settings.GOOGLE_API_KEY:
     genai.configure(api_key=settings.GOOGLE_API_KEY)
     _model = genai.GenerativeModel("gemini-1.5-flash")
+    _embedding_model = "models/text-embedding-004"
 else:
     _model = None
+    _embedding_model = None
     log.warning("gemini_not_configured", note="Set GOOGLE_API_KEY for AI features.")
+
+async def get_embedding(text: str) -> List[float]:
+    """Generate 768-dim vector using Gemini's text-embedding-004."""
+    if not _embedding_model or not text:
+        return []
+    try:
+        result = genai.embed_content(
+            model=_embedding_model,
+            content=text,
+            task_type="retrieval_document",
+            title="Resume Content"
+        )
+        return result['embedding']
+    except Exception as e:
+        log.error("gemini_embedding_error", error=str(e))
+        return []
 
 
 def _parse_json_response(text: str) -> Optional[Dict]:
@@ -38,6 +56,35 @@ def _parse_json_response(text: str) -> Optional[Dict]:
     return None
 
 
+def _generate_xai_fallback(
+    score_breakdown: dict,
+    candidate_name: str,
+    job_title: str = "",
+) -> dict:
+    """Rule-based XAI when LLM is unavailable."""
+    b = score_breakdown
+    verdict = "ACCEPT" if b.get("overall_score", 0) >= 70 else \
+              "REVIEW"  if b.get("overall_score", 0) >= 40 else "REJECT"
+    missing = b.get("keyword_detail", {}).get("missing", [])
+    matched = b.get("keyword_detail", {}).get("matched", [])
+    return {
+        "verdict": verdict,
+        "overall_score": b.get("overall_score", 0),
+        "reasoning": {
+            "keyword":    f"Matched {len(matched)} required skills" + (f"; missing: {', '.join(missing[:3])}" if missing else "."),
+            "semantic":   f"Semantic alignment with JD: {b.get('semantic_score', 0):.0f}%.",
+            "format":     f"Resume format quality: {b.get('format_score', 0):.0f}%.",
+            "section":    f"Section completeness: {b.get('section_score', 0):.0f}%.",
+            "experience": f"Experience match: {b.get('experience_score', 0):.0f}%.",
+        },
+        "key_strengths": [f"Matched skill: {s}" for s in matched[:3]],
+        "key_gaps":       missing[:3],
+        "hiring_recommendation": f"{verdict} — {candidate_name} scored {b.get('overall_score', 0):.1f}% overall.",
+        "source": "rule_based",
+    }
+
+
+
 def _call_model(prompt: str, context: str = "") -> str:
     """Low-level Gemini call with error handling."""
     if not _model:
@@ -52,7 +99,11 @@ def _call_model(prompt: str, context: str = "") -> str:
 
 # ─── Agent-level LLM functions ────────────────────────────────────────────────
 
-class LLMService:
+class GeminiService:
+    @staticmethod
+    async def generate_content(prompt: str) -> str:
+        """Low-level method to call Gemini and return raw text."""
+        return _call_model(prompt)
 
     @staticmethod
     async def extract_resume_data(text: str) -> Dict[str, Any]:
@@ -211,3 +262,68 @@ Provide a concise assessment:
         """Side-by-side candidate comparison."""
         prompt = f"Compare these two candidates for the job:\n{jd}\n\nCandidate 1:\n{resume1[:2000]}\n\nCandidate 2:\n{resume2[:2000]}"
         return _call_model(prompt, context="compare_candidates") or "Comparison unavailable."
+
+    @staticmethod
+    async def generate_xai_reasoning(
+        candidate_name: str,
+        score_breakdown: dict,
+        jd_text: str,
+        resume_text: str,
+        job_title: str = "",
+    ) -> dict:
+        """
+        Agent XAI — Generate structured, explainable reasoning for every hiring decision.
+        Returns a JSON object describing exactly WHY a candidate scored the way they did.
+        Falls back to rule-based reasoning if LLM is unavailable.
+        """
+        if not _model:
+            return _generate_xai_fallback(score_breakdown, candidate_name, job_title)
+
+        b = score_breakdown
+        prompt = f"""
+You are an explainable AI system for a hiring platform. Generate a clear, structured
+justification for why {candidate_name} received an ATS score of {b.get('overall_score', 0):.1f}%.
+
+Score Breakdown:
+- Keyword Match:        {b.get('keyword_score', 0):.0f}%
+- Semantic Similarity:  {b.get('semantic_score', 0):.0f}%
+- Resume Format:        {b.get('format_score', 0):.0f}%
+- Section Completeness: {b.get('section_score', 0):.0f}%
+- Experience Match:     {b.get('experience_score', 0):.0f}%
+
+Matched Skills: {', '.join(b.get('keyword_detail', {}).get('matched', [])[:8]) or 'None'}
+Missing Skills: {', '.join(b.get('keyword_detail', {}).get('missing', [])[:5]) or 'None'}
+
+Job Description (excerpt):
+{jd_text[:1500]}
+
+Resume (excerpt):
+{resume_text[:1500]}
+
+Return ONLY a JSON object:
+{{
+  "verdict": "ACCEPT | REVIEW | REJECT",
+  "overall_score": {b.get('overall_score', 0):.1f},
+  "reasoning": {{
+    "keyword":    "1-sentence explanation of keyword match result",
+    "semantic":   "1-sentence explanation of semantic alignment",
+    "format":     "1-sentence explanation of format quality finding",
+    "section":    "1-sentence explanation of section completeness",
+    "experience": "1-sentence explanation of experience match"
+  }},
+  "key_strengths": ["strength 1", "strength 2", "strength 3"],
+  "key_gaps": ["gap 1", "gap 2"],
+  "hiring_recommendation": "2-3 sentence actionable recommendation for the recruiter",
+  "source": "llm"
+}}
+"""
+        raw = _call_model(prompt, context="generate_xai_reasoning")
+        parsed = _parse_json_response(raw)
+        if parsed:
+            return parsed
+        return _generate_xai_fallback(score_breakdown, candidate_name, job_title)
+
+
+# Backward Compatibility Alias
+LLMService = GeminiService
+

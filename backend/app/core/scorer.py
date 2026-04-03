@@ -47,40 +47,71 @@ class Scorer:
     @staticmethod
     def keyword_score(resume_text: str, jd_keywords: List[str]) -> Dict[str, Any]:
         """
-        For each JD keyword, use rapidfuzz to find the best fuzzy match in the
-        resume. A match above threshold=75 counts as a hit.
-        Returns score (0–1), matched list, missing list.
+        Hybrid keyword scoring:
+        1. Exact match                  → 1.0 credit
+        2. Taxonomy synonym match       → 0.70 credit (e.g. "Vue" for "React")
+        3. rapidfuzz fuzzy string match → proportional credit (threshold 75)
+        4. No match                     → 0.0
+
+        Integrates the skill_synonyms knowledge graph for contextual inference.
         """
         if not jd_keywords:
-            return {"score": 1.0, "matched": [], "missing": [], "fuzzy_details": []}
+            return {"score": 1.0, "matched": [], "missing": [], "synonym_matches": [], "fuzzy_details": []}
 
+        # Try synonym-aware scoring first
+        try:
+            from ..core.skill_synonyms import enrich_keyword_score
+            result = enrich_keyword_score(resume_text, jd_keywords)
+            # Augment any "none" matches with rapidfuzz fallback
+            resume_lower = resume_text.lower()
+            for detail in result["fuzzy_details"]:
+                if detail["match_type"] == "none":
+                    kw = detail["keyword"]
+                    words = resume_lower.split()
+                    best_ratio = 0
+                    for i in range(0, len(words), 30):
+                        chunk = " ".join(words[i: i + 30])
+                        ratio = fuzz.partial_ratio(kw.lower(), chunk)
+                        best_ratio = max(best_ratio, ratio)
+                    if best_ratio >= 75:
+                        fuzzy_credit = round(best_ratio / 200, 3)   # 75% → 0.375 credit
+                        detail["match_type"] = f"fuzzy:{best_ratio}"
+                        detail["score"] = fuzzy_credit
+                        if kw in result["missing"]:
+                            result["missing"].remove(kw)
+                            result["matched"].append(kw)
+                        result["synonym_matches"].append({"keyword": kw, "matched_via": f"fuzzy:{best_ratio}", "credit": fuzzy_credit})
+            # Recompute score
+            total = sum(d["score"] for d in result["fuzzy_details"])
+            result["score"] = round(total / len(jd_keywords), 3)
+            return result
+        except Exception as e:
+            log.warning("keyword_score.synonym_fallback", error=str(e))
+
+        # Pure rapidfuzz fallback
         resume_lower = resume_text.lower()
         matched, missing, details = [], [], []
-
         for kw in jd_keywords:
-            # Check exact first
             if kw.lower() in resume_lower:
                 matched.append(kw)
-                details.append({"keyword": kw, "ratio": 100, "match": "exact"})
+                details.append({"keyword": kw, "score": 1.0, "match_type": "exact"})
                 continue
-
-            # Fuzzy check — search in 200-char windows of the resume
             best_ratio = 0
             words = resume_lower.split()
             for i in range(0, len(words), 30):
-                chunk = " ".join(words[i : i + 30])
+                chunk = " ".join(words[i: i + 30])
                 ratio = fuzz.partial_ratio(kw.lower(), chunk)
                 best_ratio = max(best_ratio, ratio)
-
             if best_ratio >= 75:
                 matched.append(kw)
-                details.append({"keyword": kw, "ratio": best_ratio, "match": "fuzzy"})
+                details.append({"keyword": kw, "score": round(best_ratio/100, 3), "match_type": f"fuzzy:{best_ratio}"})
             else:
                 missing.append(kw)
-                details.append({"keyword": kw, "ratio": best_ratio, "match": "none"})
+                details.append({"keyword": kw, "score": 0.0, "match_type": "none"})
 
         score = len(matched) / len(jd_keywords) if jd_keywords else 1.0
-        return {"score": round(score, 3), "matched": matched, "missing": missing, "fuzzy_details": details}
+        return {"score": round(score, 3), "matched": matched, "missing": missing, "synonym_matches": [], "fuzzy_details": details}
+
 
     # ─── 2. Semantic Score ───────────────────────────────────────────────────
 

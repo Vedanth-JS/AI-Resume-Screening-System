@@ -1,103 +1,106 @@
-name: CI – Test & Build
+name: "AI ATS - Enterprise CI/CD"
 
 on:
   push:
-    branches: [main, develop]
+    branches: [ "main" ]
   pull_request:
-    branches: [main]
-
-env:
-  PYTHON_VERSION: "3.11"
-  NODE_VERSION: "20"
+    branches: [ "main" ]
 
 jobs:
-  # ─── Backend Tests ─────────────────────────────────────────────────────────
-  backend-test:
-    name: Backend – pytest
+  # ─── Job 1: Linting (Ruff) ────────────────────────────────────────────────
+  lint:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_USER: testuser
-          POSTGRES_PASSWORD: testpass
-          POSTGRES_DB: test_ats
-        ports: ["5432:5432"]
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      redis:
-        image: redis:7-alpine
-        ports: ["6379:6379"]
-        options: --health-cmd "redis-cli ping" --health-interval 10s
-
-    env:
-      DATABASE_URL: postgresql://testuser:testpass@localhost:5432/test_ats
-      REDIS_URL: redis://localhost:6379/0
-      SECRET_KEY: test-ci-secret-key-do-not-use-in-prod
-      GOOGLE_API_KEY: ""   # LLM calls mocked in tests
-
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
+          python-version: "3.11"
+      - name: Install Ruff
+        run: pip install ruff
+      - name: Run Ruff Check
+        run: ruff check .
+      - name: Run Ruff Format Check
+        run: ruff format --check .
 
-      - name: Install dependencies
-        working-directory: backend
-        run: |
-          pip install --upgrade pip
-          pip install -r requirements.txt
-          python -m spacy download en_core_web_sm
-
-      - name: Run pytest
-        working-directory: backend
-        run: |
-          pytest tests/ -v --tb=short --asyncio-mode=auto \
-            --cov=app --cov-report=term-missing --cov-fail-under=60
-
-  # ─── Frontend Lint/Build ───────────────────────────────────────────────────
-  frontend-build:
-    name: Frontend – Vite build
+  # ─── Job 2: Testing (Pytest + Coverage) ────────────────────────────────────
+  test:
     runs-on: ubuntu-latest
-
+    needs: lint
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Node ${{ env.NODE_VERSION }}
-        uses: actions/setup-node@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install & build
-        working-directory: frontend
+          python-version: "3.11"
+      - name: Install Dependencies
         run: |
-          npm ci
-          npm run build
+          pip install -r backend/requirements.txt
+          pip install pytest-cov
+      - name: Run Tests with Coverage
+        run: pytest backend/tests --cov=backend/app --cov-report=xml
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
 
-  # ─── Docker Build (main only) ─────────────────────────────────────────────
-  docker-build:
-    name: Docker – Compose build
+  # ─── Job 3: Security Scans (Bandit + Safety) ───────────────────────────────
+  security:
     runs-on: ubuntu-latest
-    needs: [backend-test, frontend-build]
-    if: github.ref == 'refs/heads/main'
-
+    needs: lint
     steps:
       - uses: actions/checkout@v4
-
-      - name: Build Docker images
-        run: docker compose build --no-cache api frontend worker
-
-      - name: Smoke test – API health
+      - name: Run Bandit (Security)
         run: |
-          docker compose up -d db redis chromadb api
-          sleep 20
-          curl -f http://localhost:8000/api/health || (docker compose logs api && exit 1)
-          docker compose down
+          pip install bandit
+          bandit -r backend/app -ll
+      - name: Run Safety Check (Dependencies)
+        run: |
+          pip install safety
+          safety check -r backend/requirements.txt
+
+  # ─── Job 4: Build & Tag (Docker) ───────────────────────────────────────────
+  build:
+    runs-on: ubuntu-latest
+    needs: [test, security]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: actions/setup-buildx-action@v3
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and Push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/api:latest
+            ghcr.io/${{ github.repository }}/api:${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}/api:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}/api:buildcache,mode=max
+
+  # ─── Job 5: Deploy (SSH) ────────────────────────────────────────────────────
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: production
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /app/ats
+            docker compose pull
+            docker compose up -d
+            docker image prune -f

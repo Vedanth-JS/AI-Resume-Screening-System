@@ -1,145 +1,258 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Float, JSON, Enum
-from sqlalchemy.orm import relationship
-from datetime import datetime
+from sqlalchemy import String, Text, ForeignKey, DateTime, Float, JSON, Enum, Integer, Table, Column, Index
+from sqlalchemy.orm import relationship, Mapped, mapped_column, DeclarativeBase
+from datetime import datetime, timezone
+from typing import List, Optional, Any
 from ..db.database import Base
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from pgvector.sqlalchemy import Vector
 import enum
-
+import uuid
 
 # ─── Enums ────────────────────────────────────────────────────────────────────
 
+class RoleEnum(str, enum.Enum):
+    ADMIN = "ADMIN"
+    RECRUITER = "RECRUITER"
+    VIEWER = "VIEWER"
+
 class TaskStatus(str, enum.Enum):
-    pending   = "pending"
-    running   = "running"
-    completed = "completed"
-    failed    = "failed"
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
 
 class BatchStatus(str, enum.Enum):
-    pending    = "pending"
-    processing = "processing"
-    completed  = "completed"
-    failed     = "failed"
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
 
+# ─── Mixins ────────────────────────────────────────────────────────────────────
 
-# ─── Existing tables (unchanged) ──────────────────────────────────────────────
+class TimestampMixin:
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
-class User(Base):
+class SoftDeleteMixin:
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+# ─── Association Tables ───────────────────────────────────────────────────────
+
+user_roles = Table(
+    "user_roles",
+    Base.metadata,
+    Column("user_id", ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("role_id", ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True),
+)
+
+# ─── Models ───────────────────────────────────────────────────────────────────
+
+class Organization(Base, TimestampMixin):
+    __tablename__ = "organizations"
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(100), index=True)
+    slug: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    plan_tier: Mapped[str] = mapped_column(String(20), default="free")
+    
+    users: Mapped[List["User"]] = relationship(back_populates="org")
+    jobs: Mapped[List["JobPosting"]] = relationship(back_populates="org")
+    candidates: Mapped[List["Candidate"]] = relationship(back_populates="org")
+
+class Role(Base):
+    __tablename__ = "roles"
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    name: Mapped[RoleEnum] = mapped_column(Enum(RoleEnum), unique=True)
+    permissions: Mapped[dict] = mapped_column(JSONB, default=dict)
+
+class User(Base, TimestampMixin):
     __tablename__ = "users"
-    id            = Column(Integer, primary_key=True, index=True)
-    email         = Column(String, unique=True, index=True)
-    password_hash = Column(String)
-    role          = Column(String, default="recruiter")   # admin | recruiter | candidate
-    created_at    = Column(DateTime, default=datetime.utcnow)
-    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
-    batch_jobs    = relationship("BatchJob", back_populates="creator", cascade="all, delete-orphan")
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"))
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    refresh_token_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    
+    org: Mapped["Organization"] = relationship(back_populates="users")
+    roles: Mapped[List["Role"]] = relationship(secondary=user_roles)
+    notifications: Mapped[List["Notification"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
+class JobPosting(Base, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = "job_postings"
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    title: Mapped[str] = mapped_column(String(255), index=True)
+    description: Mapped[str] = mapped_column(Text)
+    required_skills: Mapped[dict] = mapped_column(JSONB)
+    min_experience: Mapped[int] = mapped_column(default=0)
+    status: Mapped[str] = mapped_column(String(20), default="active", index=True)
+    posted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+    
+    __table_args__ = (
+        Index("ix_job_postings_skills_gin", "required_skills", postgresql_using="gin"),
+    )
+    
+    org: Mapped["Organization"] = relationship(back_populates="jobs")
+    results: Mapped[List["ScreeningResult"]] = relationship(back_populates="job")
+    applications: Mapped[List["Application"]] = relationship(back_populates="job")
 
-class JobPosting(Base):
-    __tablename__ = "jobs"
-    id                = Column(Integer, primary_key=True, index=True)
-    title             = Column(String, index=True)
-    description       = Column(Text)
-    required_skills   = Column(JSON)          # List[str]
-    min_experience    = Column(Integer, default=0)
-    required_education= Column(String, default="Not Specified")
-    created_by        = Column(Integer, ForeignKey("users.id"))
-    created_at        = Column(DateTime, default=datetime.utcnow)
-
-
-class Candidate(Base):
+class Candidate(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "candidates"
-    id          = Column(Integer, primary_key=True, index=True)
-    name        = Column(String, index=True)
-    email       = Column(String, index=True)
-    phone       = Column(String, nullable=True)
-    raw_text    = Column(Text)
-    parsed_json = Column(JSON)
-    uploaded_at = Column(DateTime, default=datetime.utcnow)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    email: Mapped[str] = mapped_column(String(255), index=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    raw_text: Mapped[str] = mapped_column(Text)
+    parsed_json: Mapped[dict] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(20), default="new", index=True)
+    
+    __table_args__ = (
+        Index("ix_candidates_skills_gin", "parsed_json", postgresql_using="gin"),
+    )
+    
+    org: Mapped["Organization"] = relationship(back_populates="candidates")
+    embeddings: Mapped[List["ResumeEmbedding"]] = relationship(back_populates="candidate")
+    applications: Mapped[List["Application"]] = relationship(back_populates="candidate")
 
+class Application(Base, TimestampMixin, SoftDeleteMixin):
+    __tablename__ = "applications"
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    candidate_id: Mapped[int] = mapped_column(ForeignKey("candidates.id"), index=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("job_postings.id"), index=True)
+    status: Mapped[str] = mapped_column(String(50), default="APPLIED")
+    score: Mapped[Optional[float]] = mapped_column(nullable=True, index=True)
+    
+    __table_args__ = (
+        Index("ix_applications_job_cand", "job_id", "candidate_id", unique=True),
+        Index("ix_applications_score_desc", score.desc()),
+    )
+    
+    org: Mapped["Organization"] = relationship()
+    candidate: Mapped["Candidate"] = relationship(back_populates="applications")
+    job: Mapped["JobPosting"] = relationship(back_populates="applications")
+    screening_results: Mapped[List["ScreeningResult"]] = relationship(back_populates="application")
 
-class ScreeningResult(Base):
-    __tablename__ = "scores"
-    id                  = Column(Integer, primary_key=True, index=True)
-    candidate_id        = Column(Integer, ForeignKey("candidates.id"))
-    job_id              = Column(Integer, ForeignKey("jobs.id"))
-    ats_score           = Column(Float)
-    llm_score           = Column(Float, nullable=True)
-    final_score         = Column(Float)
-    # ─── New breakdown columns ───────────────────────────────────────────────
-    keyword_score       = Column(Float, nullable=True)
-    semantic_score      = Column(Float, nullable=True)
-    format_score        = Column(Float, nullable=True)
-    section_score       = Column(Float, nullable=True)
-    interview_questions = Column(JSON, nullable=True)    # List[{question, rationale}]
-    jd_profile          = Column(JSON, nullable=True)    # Structured JD analysis
-    processing_time_ms  = Column(Integer, nullable=True)
-    # ─────────────────────────────────────────────────────────────────────────
-    explanation         = Column(Text, nullable=True)
-    status              = Column(String, default="pending")   # accept | review | reject
-    created_at          = Column(DateTime, default=datetime.utcnow)
+class ScreeningResult(Base, TimestampMixin):
+    __tablename__ = "screening_results"
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    application_id: Mapped[int] = mapped_column(ForeignKey("applications.id"), index=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("job_postings.id"), index=True)
+    llm_model: Mapped[str] = mapped_column(String(50), default="gemini-1.5-flash")
+    prompt_version: Mapped[str] = mapped_column(String(20), default="1.0")
+    
+    # Granular Scoring (Total 100)
+    score: Mapped[float] = mapped_column(index=True) # Total score
+    keyword_score: Mapped[float] = mapped_column(default=0.0)
+    skills_score: Mapped[float] = mapped_column(default=0.0)
+    experience_score: Mapped[float] = mapped_column(default=0.0)
+    education_score: Mapped[float] = mapped_column(default=0.0)
+    format_score: Mapped[float] = mapped_column(default=0.0)
+    certs_score: Mapped[float] = mapped_column(default=0.0)
+    
+    reasoning: Mapped[str] = mapped_column(Text)
+    bias_flags: Mapped[dict] = mapped_column(JSONB, default=dict)
+    
+    application: Mapped["Application"] = relationship(back_populates="screening_results")
+    job: Mapped["JobPosting"] = relationship(back_populates="results")
 
+class ResumeEmbedding(Base, TimestampMixin):
+    __tablename__ = "resume_embeddings"
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    candidate_id: Mapped[int] = mapped_column(ForeignKey("candidates.id"), index=True)
+    embedding: Mapped[Any] = mapped_column(Vector(768)) # Gemini text-embedding-004
+    model_version: Mapped[str] = mapped_column(String(50))
+    
+    candidate: Mapped["Candidate"] = relationship(back_populates="embeddings")
 
-class BiasReport(Base):
-    __tablename__ = "bias_reports"
-    id           = Column(Integer, primary_key=True, index=True)
-    job_id       = Column(Integer, ForeignKey("jobs.id"))
-    report_json  = Column(JSON)
-    generated_at = Column(DateTime, default=datetime.utcnow)
+class JobCandidateMatch(Base, TimestampMixin):
+    __tablename__ = "job_candidate_matches"
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("job_postings.id"), index=True)
+    candidate_id: Mapped[int] = mapped_column(ForeignKey("candidates.id"), index=True)
+    similarity_score: Mapped[float] = mapped_column(Float)
+    
+    job: Mapped["JobPosting"] = relationship()
+    candidate: Mapped["Candidate"] = relationship()
 
+    __table_args__ = (
+        Index("ix_job_match_score", similarity_score.desc()),
+    )
 
-class ChatHistory(Base):
-    __tablename__ = "chat_history"
-    id        = Column(Integer, primary_key=True, index=True)
-    user_id   = Column(Integer, ForeignKey("users.id"))
-    query     = Column(Text)
-    response  = Column(Text)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    action: Mapped[str] = mapped_column(String(100))
+    entity_type: Mapped[str] = mapped_column(String(100))
+    entity_id: Mapped[int] = mapped_column()
+    
+    # Audit trail details
+    model_version: Mapped[Optional[str]] = mapped_column(String(50))
+    prompt_hash: Mapped[Optional[str]] = mapped_column(String(64))
+    input_hash: Mapped[Optional[str]] = mapped_column(String(64))
+    output_json: Mapped[dict] = mapped_column(JSONB, default=dict)
+    bias_flags: Mapped[dict] = mapped_column(JSONB, default=dict)
+    
+    diff: Mapped[dict] = mapped_column(JSONB, default=dict)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(45))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
-
-class Notification(Base):
+class Notification(Base, TimestampMixin):
     __tablename__ = "notifications"
-    id         = Column(Integer, primary_key=True, index=True)
-    user_id    = Column(Integer, ForeignKey("users.id"))
-    message    = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    user       = relationship("User", back_populates="notifications")
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    message: Mapped[str] = mapped_column(String(500))
+    is_read: Mapped[bool] = mapped_column(default=False)
+    
+    user: Mapped["User"] = relationship(back_populates="notifications")
 
+class InterviewKit(Base, TimestampMixin):
+    __tablename__ = "interview_kits"
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("job_postings.id"), index=True)
+    candidate_id: Mapped[int] = mapped_column(ForeignKey("candidates.id"), index=True)
+    focus_areas: Mapped[dict] = mapped_column(JSON) # List[str]
+    difficulty: Mapped[str] = mapped_column(String(20)) # JUNIOR|MID|SENIOR
+    questions: Mapped[dict] = mapped_column(JSON) # List[QuestionDict]
+    
+    scorecards: Mapped[List["InterviewScorecard"]] = relationship(back_populates="kit")
 
-# ─── New tables ───────────────────────────────────────────────────────────────
+class InterviewScorecard(Base, TimestampMixin):
+    __tablename__ = "interview_scorecards"
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    kit_id: Mapped[int] = mapped_column(ForeignKey("interview_kits.id"), index=True)
+    recruiter_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    scores: Mapped[dict] = mapped_column(JSON) # {question_index: score}
+    total_score: Mapped[float] = mapped_column()
+    ai_recommendation: Mapped[str] = mapped_column(Text) # final hire/no-hire logic
+    
+    kit: Mapped["InterviewKit"] = relationship(back_populates="scorecards")
+    recruiter: Mapped["User"] = relationship()
+    
+class BatchJob(Base, TimestampMixin):
+    __tablename__ = "batch_jobs"
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    job_id: Mapped[int] = mapped_column(ForeignKey("job_postings.id"), index=True)
+    status: Mapped[BatchStatus] = mapped_column(Enum(BatchStatus), default=BatchStatus.PENDING)
+    total_files: Mapped[int] = mapped_column(default=0)
+    completed_files: Mapped[int] = mapped_column(default=0)
+    result_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    
+    org: Mapped["Organization"] = relationship()
+    job: Mapped["JobPosting"] = relationship()
 
-class TaskRecord(Base):
-    """Tracks every Celery task so the frontend can poll status."""
-    __tablename__    = "tasks"
-    id               = Column(Integer, primary_key=True, index=True)
-    celery_task_id   = Column(String, unique=True, index=True)
-    task_type        = Column(String)          # resume_screen | batch_process
-    status           = Column(String, default=TaskStatus.pending)
-    result_json      = Column(JSON, nullable=True)
-    error            = Column(Text, nullable=True)
-    progress         = Column(Integer, default=0)    # 0-100 percent
-    created_at       = Column(DateTime, default=datetime.utcnow)
-    completed_at     = Column(DateTime, nullable=True)
+class TaskRecord(Base, TimestampMixin):
+    __tablename__ = "task_records"
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    celery_task_id: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    task_type: Mapped[str] = mapped_column(String(50)) # "screening", "bulk_upload", etc.
+    status: Mapped[TaskStatus] = mapped_column(Enum(TaskStatus), default=TaskStatus.PENDING)
+    progress: Mapped[int] = mapped_column(default=0) # 0-100
+    result_json: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
-
-class AnalyticsEvent(Base):
-    """Append-only event log for all significant system actions."""
-    __tablename__  = "analytics_events"
-    id             = Column(Integer, primary_key=True, index=True)
-    event_type     = Column(String, index=True)     # resume_uploaded | score_computed | etc.
-    payload_json   = Column(JSON, nullable=True)
-    created_at     = Column(DateTime, default=datetime.utcnow)
-
-
-class BatchJob(Base):
-    """Tracks a bulk ZIP upload batch."""
-    __tablename__  = "batch_jobs"
-    id             = Column(Integer, primary_key=True, index=True)
-    created_by     = Column(Integer, ForeignKey("users.id"))
-    job_id         = Column(Integer, ForeignKey("jobs.id"), nullable=True)
-    jd_text        = Column(Text, nullable=True)
-    status         = Column(String, default=BatchStatus.pending)
-    total_files    = Column(Integer, default=0)
-    completed_files= Column(Integer, default=0)
-    result_json    = Column(JSON, nullable=True)      # List of ranked candidate results
-    created_at     = Column(DateTime, default=datetime.utcnow)
-    completed_at   = Column(DateTime, nullable=True)
-    creator        = relationship("User", back_populates="batch_jobs")
+    org: Mapped["Organization"] = relationship()

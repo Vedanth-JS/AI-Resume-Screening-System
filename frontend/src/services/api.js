@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 const api = axios.create({ baseURL: API_BASE_URL });
 
@@ -14,13 +14,29 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// 401 → logout
+// 401 → Refresh or Logout
 api.interceptors.response.use(
   (r) => r,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      window.location.reload();
+  async (error) => {
+    const originalRequest = error.config;
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      const refreshToken = localStorage.getItem('refreshToken');
+      if (refreshToken) {
+        try {
+          const res = await axios.post(`${API_BASE_URL}/auth/refresh`, null, { params: { refresh_token: refreshToken } });
+          localStorage.setItem('token', res.data.access_token);
+          localStorage.setItem('refreshToken', res.data.refresh_token);
+          originalRequest.headers.Authorization = `Bearer ${res.data.access_token}`;
+          return api(originalRequest);
+        } catch (refreshError) {
+          authService.logout();
+          window.location.reload();
+        }
+      } else {
+        authService.logout();
+        window.location.reload();
+      }
     }
     return Promise.reject(error);
   }
@@ -33,10 +49,26 @@ export const authService = {
     form.append('username', email);
     form.append('password', password);
     const res = await api.post('/auth/token', form);
-    if (res.data.access_token) localStorage.setItem('token', res.data.access_token);
+    if (res.data.access_token) {
+        localStorage.setItem('token', res.data.access_token);
+        localStorage.setItem('refreshToken', res.data.refresh_token);
+    }
     return res.data;
   },
-  logout: () => localStorage.removeItem('token'),
+  register: async (email, password, orgName) => {
+    const res = await api.post('/auth/register', {
+      email,
+      password,
+      organization_name: orgName,
+      organization_slug: email.split('@')[0].replace('.', '-')
+    });
+    return res.data;
+  },
+  logout: async () => {
+    try { await api.post('/auth/logout'); } catch (e) {}
+    localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
+  },
   getEmail: () => {
     const token = localStorage.getItem('token');
     if (!token) return null;
@@ -101,9 +133,23 @@ export const chatService = {
   query: (query) => api.post('/chat', null, { params: { query } }),
 };
 
-// ─── Bias ─────────────────────────────────────────────────────────────────────
-export const biasService = {
-  getReport: (jobId) => api.get('/bias-report', { params: { job_id: jobId } }),
+// ─── Interview Assistant ────────────────────────────────────────────────────
+export const interviewService = {
+  generateKit: (candidateId, jobId, focusAreas, difficulty) => {
+    const form = new FormData();
+    form.append('job_id', jobId);
+    focusAreas.forEach(a => form.append('focus_areas', a));
+    form.append('difficulty', difficulty);
+    return api.post(`/candidates/${candidateId}/interview-questions`, form);
+  },
+  submitScorecard: (kitId, scores) => api.post(`/interviews/${kitId}/scorecard`, { scores }),
+  getKit: (id) => api.get(`/interviews/${id}`),
+};
+
+// ─── Comparison ──────────────────────────────────────────────────────────────
+export const comparisonService = {
+  compare: (jobId, candidateIds) => 
+    api.get(`/jobs/${jobId}/compare`, { params: { candidate_ids: candidateIds.join(',') } }),
 };
 
 export default api;
