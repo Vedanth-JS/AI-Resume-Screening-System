@@ -1,0 +1,102 @@
+{
+  "dashboard": {
+    "title": "AI ATS — Enterprise Observability",
+    "uid": "ai-ats-main",
+    "timezone": "browser",
+    "refresh": "30s",
+    "panels": [
+      {
+        "title": "API Request Rate",
+        "type": "graph",
+        "targets": [
+          { "expr": "rate(ai_ats_requests_total[1m])", "legendFormat": "{{method}} {{endpoint}} {{status}}" }
+        ],
+        "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 }
+      },
+      {
+        "title": "P50 / P95 / P99 Latency",
+        "type": "graph",
+        "targets": [
+          { "expr": "histogram_quantile(0.50, rate(ai_ats_request_duration_seconds_bucket[5m]))", "legendFormat": "P50" },
+          { "expr": "histogram_quantile(0.95, rate(ai_ats_request_duration_seconds_bucket[5m]))", "legendFormat": "P95" },
+          { "expr": "histogram_quantile(0.99, rate(ai_ats_request_duration_seconds_bucket[5m]))", "legendFormat": "P99" }
+        ],
+        "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 }
+      },
+      {
+        "title": "Candidates Screened",
+        "type": "stat",
+        "targets": [
+          { "expr": "ai_ats_candidates_screened_total" }
+        ],
+        "gridPos": { "x": 0, "y": 8, "w": 4, "h": 4 }
+      },
+      {
+        "title": "Active WebSockets",
+        "type": "stat",
+        "targets": [
+          { "expr": "ai_ats_active_websockets" }
+        ],
+        "gridPos": { "x": 4, "y": 8, "w": 4, "h": 4 }
+      },
+      {
+        "title": "Screening Duration (avg)",
+        "type": "stat",
+        "targets": [
+          { "expr": "rate(ai_ats_screening_duration_seconds_sum[5m]) / rate(ai_ats_screening_duration_seconds_count[5m])" }
+        ],
+        "gridPos": { "x": 8, "y": 8, "w": 4, "h": 4 }
+      },
+      {
+        "title": "Error Rate (5xx)",
+        "type": "stat",
+        "targets": [
+          { "expr": "sum(rate(ai_ats_requests_total{status=~\"5..\"}[5m])) / sum(rate(ai_ats_requests_total[5m])) * 100" }
+        ],
+        "gridPos": { "x": 12, "y": 8, "w": 4, "h": 4 }
+      },
+      {
+        "title": "DB Connection Pool",
+        "type": "graph",
+        "targets": [
+          { "expr": "ai_ats_db_pool_size", "legendFormat": "Total" },
+          { "expr": "ai_ats_db_pool_available", "legendFormat": "Available" }
+        ],
+        "gridPos": { "x": 0, "y": 16, "w": 8, "h": 8 }
+      },
+      {
+        "title": "LLM Call Duration (P95)",
+        "type": "graph",
+        "targets": [
+          { "expr": "histogram_quantile(0.95, rate(ai_ats_llm_call_duration_seconds_bucket[5m]))", "legendFormat": "{{operation}}" }
+        ],
+        "gridPos": { "x": 8, "y": 16, "w": 8, "h": 8 }
+      },
+      {
+        "title": "Celery Task Rate",
+        "type": "graph",
+        "targets": [
+          { "expr": "rate(ai_ats_celery_tasks_total[5m])", "legendFormat": "{{task_name}} ({{status}})" }
+        ],
+        "gridPos": { "x": 16, "y": 16, "w": 8, "h": 8 }
+      },
+      {
+        "title": "Auth Events",
+        "type": "graph",
+        "targets": [
+          { "expr": "rate(ai_ats_auth_events_total[5m])", "legendFormat": "{{event}} ({{status}})" }
+        ],
+        "gridPos": { "x": 0, "y": 24, "w": 12, "h": 8 }
+      },
+      {
+        "title": "Resumes Uploaded by Format",
+        "type": "piechart",
+        "targets": [
+          { "expr": "ai_ats_resumes_uploaded_total", "legendFormat": "{{source_format}}" }
+        ],
+        "gridPos": { "x": 12, "y": 24, "w": 12, "h": 8 }
+      }
+    ],
+    "schemaVersion": 27
+  }
+}

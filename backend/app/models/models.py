@@ -3,10 +3,22 @@ from sqlalchemy.orm import relationship, Mapped, mapped_column, DeclarativeBase
 from datetime import datetime, timezone
 from typing import List, Optional, Any
 from ..db.database import Base
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import UUID
 from pgvector.sqlalchemy import Vector
 import enum
 import uuid
+from sqlalchemy.types import TypeDecorator
+
+# ─── Custom Types for SQLite Compatibility ────────────────────────────────────
+class SafeJSONB(TypeDecorator):
+    impl = JSON
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == 'postgresql':
+            from sqlalchemy.dialects.postgresql import JSONB
+            return dialect.type_descriptor(JSONB())
+        return dialect.type_descriptor(JSON())
 
 # ─── Enums ────────────────────────────────────────────────────────────────────
 
@@ -62,19 +74,28 @@ class Role(Base):
     __tablename__ = "roles"
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     name: Mapped[RoleEnum] = mapped_column(Enum(RoleEnum), unique=True)
-    permissions: Mapped[dict] = mapped_column(JSONB, default=dict)
+    permissions: Mapped[dict] = mapped_column(SafeJSONB, default=dict)
 
 class User(Base, TimestampMixin):
     __tablename__ = "users"
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     org_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"))
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    password_hash: Mapped[str] = mapped_column(String(255))
+    password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     refresh_token_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    is_active: Mapped[bool] = mapped_column(default=True)
+    email_verified: Mapped[bool] = mapped_column(default=False)
+    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    avatar_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    timezone: Mapped[str] = mapped_column(String(50), default="UTC")
     
     org: Mapped["Organization"] = relationship(back_populates="users")
     roles: Mapped[List["Role"]] = relationship(secondary=user_roles)
     notifications: Mapped[List["Notification"]] = relationship(back_populates="user", cascade="all, delete-orphan")
+    oauth_accounts: Mapped[List["OAuthAccount"]] = relationship(back_populates="user")
+    mfa_devices: Mapped[List["MFADevice"]] = relationship(back_populates="user")
+    sessions: Mapped[List["UserSession"]] = relationship(back_populates="user")
+    departments: Mapped[List["Department"]] = relationship(secondary="department_members", back_populates="users")
 
 class JobPosting(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "job_postings"
@@ -82,7 +103,7 @@ class JobPosting(Base, TimestampMixin, SoftDeleteMixin):
     org_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
     title: Mapped[str] = mapped_column(String(255), index=True)
     description: Mapped[str] = mapped_column(Text)
-    required_skills: Mapped[dict] = mapped_column(JSONB)
+    required_skills: Mapped[dict] = mapped_column(SafeJSONB)
     min_experience: Mapped[int] = mapped_column(default=0)
     status: Mapped[str] = mapped_column(String(20), default="active", index=True)
     posted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
@@ -103,7 +124,7 @@ class Candidate(Base, TimestampMixin, SoftDeleteMixin):
     email: Mapped[str] = mapped_column(String(255), index=True)
     phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     raw_text: Mapped[str] = mapped_column(Text)
-    parsed_json: Mapped[dict] = mapped_column(JSONB)
+    parsed_json: Mapped[dict] = mapped_column(SafeJSONB)
     status: Mapped[str] = mapped_column(String(20), default="new", index=True)
     
     __table_args__ = (
@@ -132,6 +153,7 @@ class Application(Base, TimestampMixin, SoftDeleteMixin):
     candidate: Mapped["Candidate"] = relationship(back_populates="applications")
     job: Mapped["JobPosting"] = relationship(back_populates="applications")
     screening_results: Mapped[List["ScreeningResult"]] = relationship(back_populates="application")
+    pipeline_stages: Mapped[List["PipelineStage"]] = relationship(back_populates="application", cascade="all, delete-orphan")
 
 class ScreeningResult(Base, TimestampMixin):
     __tablename__ = "screening_results"
@@ -151,7 +173,7 @@ class ScreeningResult(Base, TimestampMixin):
     certs_score: Mapped[float] = mapped_column(default=0.0)
     
     reasoning: Mapped[str] = mapped_column(Text)
-    bias_flags: Mapped[dict] = mapped_column(JSONB, default=dict)
+    bias_flags: Mapped[dict] = mapped_column(SafeJSONB, default=dict)
     
     application: Mapped["Application"] = relationship(back_populates="screening_results")
     job: Mapped["JobPosting"] = relationship(back_populates="results")
@@ -191,10 +213,10 @@ class AuditLog(Base):
     model_version: Mapped[Optional[str]] = mapped_column(String(50))
     prompt_hash: Mapped[Optional[str]] = mapped_column(String(64))
     input_hash: Mapped[Optional[str]] = mapped_column(String(64))
-    output_json: Mapped[dict] = mapped_column(JSONB, default=dict)
-    bias_flags: Mapped[dict] = mapped_column(JSONB, default=dict)
+    output_json: Mapped[dict] = mapped_column(SafeJSONB, default=dict)
+    bias_flags: Mapped[dict] = mapped_column(SafeJSONB, default=dict)
     
-    diff: Mapped[dict] = mapped_column(JSONB, default=dict)
+    diff: Mapped[dict] = mapped_column(SafeJSONB, default=dict)
     ip_address: Mapped[Optional[str]] = mapped_column(String(45))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 

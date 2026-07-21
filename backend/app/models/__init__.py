@@ -1,1 +1,70 @@
-# Pydantic models for request/response validation
+"""SQLAlchemy ORM models — barrel exports."""
+
+from .models import (
+    Base,
+    SafeJSONB,
+    TimestampMixin,
+    SoftDeleteMixin,
+    RoleEnum,
+    TaskStatus,
+    BatchStatus,
+    user_roles,
+    Organization,
+    Role,
+    User,
+    JobPosting,
+    Candidate,
+    Application,
+    ScreeningResult,
+    ResumeEmbedding,
+    JobCandidateMatch,
+    AuditLog,
+    Notification,
+    InterviewKit,
+    InterviewScorecard,
+    BatchJob,
+    TaskRecord,
+)
+
+from .ats_models import (
+    PipelineStageEnum,
+    InterviewType,
+    OfferStatus,
+    CommunicationType,
+    Department,
+    department_members,
+    PipelineStage,
+    CandidateNote,
+    ActivityLog,
+    Interview,
+    OfferLetter,
+    EmailTemplate,
+    TalentPool,
+    talent_pool_candidates,
+    RejectionReason,
+    BulkOperation,
+)
+
+from .auth_models import (
+    MFAProvider,
+    SessionStatus,
+    OAuthAccount,
+    MFADevice,
+    UserSession,
+    APIKey,
+)
+
+__all__ = [
+    "Base", "SafeJSONB", "TimestampMixin", "SoftDeleteMixin",
+    "RoleEnum", "TaskStatus", "BatchStatus", "user_roles",
+    "Organization", "Role", "User", "JobPosting", "Candidate",
+    "Application", "ScreeningResult", "ResumeEmbedding",
+    "JobCandidateMatch", "AuditLog", "Notification",
+    "InterviewKit", "InterviewScorecard", "BatchJob", "TaskRecord",
+    "PipelineStageEnum", "InterviewType", "OfferStatus", "CommunicationType",
+    "Department", "department_members", "PipelineStage", "CandidateNote",
+    "ActivityLog", "Interview", "OfferLetter", "EmailTemplate",
+    "TalentPool", "talent_pool_candidates", "RejectionReason", "BulkOperation",
+    "MFAProvider", "SessionStatus", "OAuthAccount", "MFADevice",
+    "UserSession", "APIKey",
+]

@@ -1,0 +1,141 @@
+# ─── Prometheus Alerting Rules — AI ATS ───────────────────────────────────────
+
+groups:
+  - name: ai-ats-critical
+    rules:
+      # ─── Service Health ───────────────────────────────────────────────────
+      - alert: APIDown
+        expr: up{job="ai-ats-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API service is down"
+          description: "API instance {{ $labels.instance }} has been down for 2 minutes."
+
+      - alert: HighErrorRate
+        expr: rate(ai_ats_requests_total{status=~"5.."}[5m]) / rate(ai_ats_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High 5xx error rate ({{ $value | humanizePercentage }})"
+          description: "API error rate exceeded 5% over the last 5 minutes."
+
+      # ─── Latency ─────────────────────────────────────────────────────────
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(ai_ats_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "P95 latency > 2s (currently {{ $value }}s)"
+          description: "API response time at 95th percentile is above 2 seconds."
+
+      # ─── Database ────────────────────────────────────────────────────────
+      - alert: DatabaseDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL is unreachable"
+          description: "Database connection failed on {{ $labels.instance }}."
+
+      - alert: DatabaseConnectionPoolExhausted
+        expr: ai_ats_db_pool_available / ai_ats_db_pool_size < 0.2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DB connection pool < 20% available"
+          description: "Pool {{ $labels.instance }} has only {{ $value | humanize }}% connections free."
+
+      # ─── Redis ───────────────────────────────────────────────────────────
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is unreachable"
+          description: "Redis instance {{ $labels.instance }} is down."
+
+      - alert: RedisHighMemory
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis memory usage > 90%"
+          description: "Redis is at {{ $value | humanizePercentage }} of max memory."
+
+      # ─── Celery ──────────────────────────────────────────────────────────
+      - alert: CeleryQueueBacklog
+        expr: ai_ats_celery_queue_length > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Celery queue backlog > 100 tasks"
+          description: "Queue {{ $labels.queue }} has {{ $value }} pending tasks."
+
+      - alert: CeleryTaskFailureRate
+        expr: rate(ai_ats_celery_tasks_total{status="failed"}[15m]) / rate(ai_ats_celery_tasks_total[15m]) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Celery task failure rate > 10%"
+          description: "{{ $value | humanizePercentage }} of tasks are failing."
+
+      # ─── LLM / AI ────────────────────────────────────────────────────────
+      - alert: LLMCallFailureRate
+        expr: rate(ai_ats_llm_call_failures_total[15m]) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM API call failure rate elevated"
+          description: "Gemini API is returning errors at elevated rate."
+
+      # ─── Auth Security ───────────────────────────────────────────────────
+      - alert: HighFailedLoginRate
+        expr: rate(ai_ats_auth_events_total{event="login",status="failure"}[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High rate of failed logins"
+          description: "Possible brute-force attack detected. {{ $value }} failed logins per second."
+
+      # ─── Disk / Resources ────────────────────────────────────────────────
+      - alert: DiskSpaceLow
+        expr: node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} < 0.15
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Disk space < 15% on {{ $labels.instance }}"
+          description: "Only {{ $value | humanizePercentage }} disk space remaining."
+
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CPU usage > 85% on {{ $labels.instance }}"
+          description: "Sustained high CPU utilization."
+
+  - name: ai-ats-business
+    rules:
+      # ─── Business SLIs ────────────────────────────────────────────────────
+      - alert: ZeroCandidatesScreened
+        expr: rate(ai_ats_candidates_screened_total[1h]) == 0 and rate(ai_ats_requests_total{endpoint=~"/api/resume/upload"}[1h]) > 0
+        for: 1h
+        labels:
+          severity: info
+        annotations:
+          summary: "Uploads received but no successful screenings"
+          description: "Pipeline may be broken — resumes uploaded but not processed."

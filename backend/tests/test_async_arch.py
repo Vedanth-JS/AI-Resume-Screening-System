@@ -1,6 +1,5 @@
 import pytest
 from httpx import AsyncClient
-from app.main import app
 from app.core.pdf_extractor import PDFExtractor
 import hashlib
 

@@ -3,7 +3,7 @@ from ..celery_app import celery_app, run_async
 from ...db.database import AsyncSessionLocal
 from ...models import models
 from sqlalchemy import select, func
-from ...api.analytics import job_analytics
+
 
 logger = get_task_logger(__name__)
 

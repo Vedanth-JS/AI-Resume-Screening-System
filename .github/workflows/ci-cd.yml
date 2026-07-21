@@ -1,0 +1,153 @@
+name: CI/CD Pipeline — AI ATS
+
+on:
+  push:
+    branches: [main, staging]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME_API: ${{ github.repository_owner }}/ai-ats-api
+  IMAGE_NAME_FRONTEND: ${{ github.repository_owner }}/ai-ats-frontend
+
+jobs:
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Lint & Test
+  # ═══════════════════════════════════════════════════════════════════════════
+  lint-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python (Backend)
+        if: matrix.service == 'backend'
+        uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+
+      - name: Setup Node.js (Frontend)
+        if: matrix.service == 'frontend'
+        uses: actions/setup-node@v4
+        with: { node-version: "22", cache: "npm", cache-dependency-path: frontend/package-lock.json }
+
+      - name: Install Backend Deps
+        if: matrix.service == 'backend'
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+
+      - name: Run Backend Tests
+        if: matrix.service == 'backend'
+        run: cd backend && python -m pytest tests/ -v --asyncio-mode=auto
+
+      - name: Install Frontend Deps
+        if: matrix.service == 'frontend'
+        run: cd frontend && npm ci
+
+      - name: Lint Frontend
+        if: matrix.service == 'frontend'
+        run: cd frontend && npx tsc --noEmit
+
+      - name: Build Frontend
+        if: matrix.service == 'frontend'
+        run: cd frontend && npm run build
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Docker Build & Push
+  # ═══════════════════════════════════════════════════════════════════════════
+  docker:
+    needs: lint-test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        image:
+          - context: backend
+            dockerfile: backend/Dockerfile
+            name: api
+          - context: frontend
+            dockerfile: frontend/Dockerfile.prod
+            name: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set Docker tags
+        id: meta
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          REF=${{ github.ref_name }}
+          if [[ "$REF" == v* ]]; then
+            echo "tag=${REF}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${SHA}" >> $GITHUB_OUTPUT
+          fi
+          echo "latest_tag=latest" >> $GITHUB_OUTPUT
+
+      - name: Build & Push ${{ matrix.image.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.image.context }}
+          file: ${{ matrix.image.dockerfile }}
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/ai-ats-${{ matrix.image.name }}:${{ steps.meta.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/ai-ats-${{ matrix.image.name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Deploy — Staging (auto on push to main)
+  # ═══════════════════════════════════════════════════════════════════════════
+  deploy-staging:
+    needs: docker
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: staging
+    steps:
+      - name: Deploy to Staging
+        run: |
+          echo "Deploying to staging environment..."
+          # SSH into server and run docker compose pull + up
+          # ssh staging-server "cd /opt/ai-ats && docker compose pull && docker compose up -d"
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Deploy — Production (manual approval required)
+  # ═══════════════════════════════════════════════════════════════════════════
+  deploy-production:
+    needs: [docker, deploy-staging]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment: production
+    steps:
+      - name: Deploy to Production (Blue-Green)
+        run: |
+          echo "Running blue-green deployment to production..."
+          # ./scripts/blue-green-deploy.sh ${{ steps.meta.outputs.tag }}
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Rollback (manual trigger)
+  # ═══════════════════════════════════════════════════════════════════════════
+  rollback:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment
+    environment: ${{ github.event.inputs.environment }}
+    steps:
+      - name: Rollback Deployment
+        run: |
+          echo "Rolling back ${{ github.event.inputs.environment }} to ${{ github.event.inputs.version }}"
+          # ./scripts/rollback.sh ${{ github.event.inputs.environment }} ${{ github.event.inputs.version }}

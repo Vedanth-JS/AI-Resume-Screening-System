@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Backgro
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-import redis
+import redis.asyncio as aioredis
 from celery import chord
 
 from ..db.database import get_db
@@ -22,7 +22,7 @@ from ..core.pdf_extractor import PDFExtractor
 
 router = APIRouter()
 RecruiterOnly = get_current_user_with_role(RoleEnum.RECRUITER)
-r = redis.Redis.from_url(os.getenv("REDIS_URL", "redis://redis:6379/0"))
+r = aioredis.from_url(os.getenv("REDIS_URL", "redis://redis:6379/0"))
 
 @router.post("/jobs/{job_id}/bulk-upload")
 async def bulk_upload_resumes(
@@ -101,7 +101,7 @@ async def bulk_upload_resumes(
     chord(task_signatures)(callback)
 
     # Initial Redis progress
-    r.set(f"batch_status:{batch_id}", json.dumps({
+    await r.set(f"batch_status:{batch_id}", json.dumps({
         "batch_id": batch_id,
         "status": "PROCESSING",
         "progress": 0,
@@ -125,7 +125,7 @@ async def get_batch_progress_sse(batch_id: str, request: Request):
             if await request.is_disconnected():
                 break
                 
-            data = r.get(f"batch_status:{batch_id}")
+            data = await r.get(f"batch_status:{batch_id}")
             if data:
                 yield {
                     "event": "message",

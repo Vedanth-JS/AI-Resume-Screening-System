@@ -4,16 +4,18 @@ Run: pytest tests/ -v --asyncio-mode=auto
 """
 import pytest
 import json
+import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import AsyncClient, ASGITransport
-from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool, NullPool
 
 # ─── In-memory test DB setup ─────────────────────────────────────────────────
 
-TEST_DATABASE_URL = "sqlite:///:memory:"
+TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(autouse=True)
 def override_settings():
     """Override settings before any app import."""
     import os
@@ -22,22 +24,40 @@ def override_settings():
     os.environ["SECRET_KEY"] = "test-secret"
     os.environ["GOOGLE_API_KEY"] = ""
 
-@pytest.fixture(scope="session")
-def engine():
+@pytest.fixture
+async def engine():
     from app.db.database import Base
-    eng = create_engine(TEST_DATABASE_URL, connect_args={"check_same_thread": False})
-    Base.metadata.create_all(bind=eng)
+    import app.models.models  # noqa: F401
+    import app.models.auth_models  # noqa: F401
+    import app.models.ats_models  # noqa: F401
+    eng = create_async_engine(
+        TEST_DATABASE_URL,
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    
+    # Seed roles
+    async_session = sessionmaker(eng, class_=AsyncSession, expire_on_commit=False)
+    async with async_session() as session:
+        from app.models.models import Role, RoleEnum
+        for r in [RoleEnum.ADMIN, RoleEnum.RECRUITER, RoleEnum.VIEWER]:
+            session.add(Role(name=r))
+        await session.commit()
+        
     return eng
 
 @pytest.fixture
-def db_session(engine):
-    Session = sessionmaker(bind=engine)
-    session = Session()
-    try:
-        yield session
-    finally:
-        session.rollback()
-        session.close()
+async def db_session(engine):
+    async_session = sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+    async with async_session() as session:
+        try:
+            yield session
+        finally:
+            await session.rollback()
 
 @pytest.fixture
 async def client(db_session):
@@ -45,11 +65,8 @@ async def client(db_session):
     from app.main import app
     from app.db.database import get_db
 
-    def override_get_db():
-        try:
-            yield db_session
-        finally:
-            pass
+    async def override_get_db():
+        yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
@@ -64,18 +81,26 @@ async def test_health_endpoint(client):
     resp = await client.get("/api/health")
     assert resp.status_code == 200
     data = resp.json()
+    if data["status"] != "ok":
+        raise ValueError(f"HEALTH DATA: {data}")
     assert data["status"] == "ok"
 
 @pytest.mark.asyncio
 async def test_register_and_login(client):
     # Register
-    resp = await client.post("/api/auth/register?email=test@example.com&password=testpass123")
+    register_data = {
+        "email": "test@example.com",
+        "password": "TestPass!123456",
+        "organization_name": "Test Org",
+        "organization_slug": "test-org"
+    }
+    resp = await client.post("/api/auth/register", json=register_data)
     assert resp.status_code == 200
 
     # Login
     resp = await client.post(
         "/api/auth/token",
-        data={"username": "test@example.com", "password": "testpass123"},
+        data={"username": "test@example.com", "password": "TestPass!123456"},
     )
     assert resp.status_code == 200
     assert "access_token" in resp.json()
@@ -93,12 +118,20 @@ async def test_login_wrong_password(client):
 
 @pytest.fixture
 async def auth_token(client):
-    await client.post("/api/auth/register?email=recruiter@test.com&password=pass123")
+    unique_suffix = uuid.uuid4().hex[:8]
+    register_data = {
+        "email": f"recruiter_{unique_suffix}@test.com",
+        "password": "TestPass!123456",
+        "organization_name": "Recruitment Corp",
+        "organization_slug": f"recruitment-corp-{unique_suffix}"
+    }
+    await client.post("/api/auth/register", json=register_data)
     resp = await client.post(
         "/api/auth/token",
-        data={"username": "recruiter@test.com", "password": "pass123"},
+        data={"username": register_data["email"], "password": "TestPass!123456"},
     )
     return resp.json()["access_token"]
+
 
 @pytest.mark.asyncio
 async def test_create_and_list_jobs(client, auth_token):
@@ -119,14 +152,15 @@ async def test_create_and_list_jobs(client, auth_token):
     job_id = job["id"]
 
     # List jobs
-    resp = await client.get("/api/jobs")
+    resp = await client.get("/api/jobs", headers=headers)
     assert resp.status_code == 200
     jobs = resp.json()
     assert any(j["id"] == job_id for j in jobs)
 
 @pytest.mark.asyncio
-async def test_get_job_not_found(client):
-    resp = await client.get("/api/jobs/99999")
+async def test_get_job_not_found(client, auth_token):
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    resp = await client.get("/api/jobs/99999", headers=headers)
     assert resp.status_code == 404
 
 
@@ -185,8 +219,9 @@ def test_section_score():
     assert result["score"] >= 0.5
     assert "education" in result["sections_found"]
 
-def test_compute_full_score_structure():
+def test_compute_full_score_structure(monkeypatch):
     from app.core.scorer import Scorer
+    monkeypatch.setattr(Scorer, "semantic_score_st", lambda x, y: 85.0)
     resume = "Python developer with 5 years experience. SKILLS: Python, FastAPI. linkedin.com/johndoe"
     jd     = "We need a Python engineer with FastAPI experience."
     result = Scorer.compute_full_score(resume, jd, ["python", "fastapi"])
@@ -211,11 +246,10 @@ async def test_analytics_overview_returns_structure(client, auth_token):
     resp = await client.get("/api/analytics/overview", headers=headers)
     assert resp.status_code == 200
     data = resp.json()
-    assert "total_screened" in data
-    assert "score_distribution" in data
-    assert "top_skills" in data
-    assert "bias_flags" in data
-    assert "processing_time" in data
+    assert "total_applications" in data
+    assert "average_score" in data
+    assert "active_jobs" in data
+    assert "status_distribution" in data
 
 
 # ─── LLM service (mocked) ────────────────────────────────────────────────────

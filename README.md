@@ -71,8 +71,8 @@ Get the system running in under 2 minutes:
 
 4. **Verify System**
    ```bash
-   curl http://localhost:8000/health
-   # Visit http://localhost:5173 for the Dashboard
+   curl http://localhost:8080/health
+   # Visit http://localhost:4173 for the Dashboard
    # Visit http://localhost:5555 for Celery Monitor
    ```
 

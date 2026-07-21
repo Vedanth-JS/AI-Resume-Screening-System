@@ -3,13 +3,17 @@ from app.scoring.ats_scorer import ATSScorer
 from app.bias.detector import BiasDetector
 from app.bias.anonymizer import CandidateAnonymizer
 
-import nltk
 try:
-    nltk.download('punkt_tab')
-    nltk.download('wordnet')
-    nltk.download('averaged_perceptron_tagger_eng')
-except Exception:
-    pass
+    import nltk
+
+    try:
+        nltk.download('punkt_tab')
+        nltk.download('wordnet')
+        nltk.download('averaged_perceptron_tagger_eng')
+    except Exception:
+        pass
+except ImportError:
+    nltk = None
 
 def test_ats_scorer_components():
     scorer = ATSScorer()

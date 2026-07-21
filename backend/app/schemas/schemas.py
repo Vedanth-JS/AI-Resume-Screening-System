@@ -2,63 +2,76 @@ from pydantic import BaseModel, EmailStr, ConfigDict
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 
+
 class UserBase(BaseModel):
     email: EmailStr
     role: str = "recruiter"
 
+
 class UserCreate(UserBase):
     password: str
+
 
 class UserResponse(UserBase):
     id: int
     model_config = ConfigDict(from_attributes=True)
 
+
 class Token(BaseModel):
     access_token: str
     token_type: str
+
 
 class TokenData(BaseModel):
     email: Optional[str] = None
     role: Optional[str] = None
 
+
 class JobBase(BaseModel):
     title: str
     description: str
-    required_skills: List[str]
+    required_skills: Any  # list or dict — matches DB SafeJSONB
     min_experience: int = 0
     required_education: str = "Not Specified"
 
+
 class JobCreate(JobBase):
     pass
+
 
 class JobResponse(JobBase):
     id: int
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
+
 class CandidateBase(BaseModel):
     name: str
     email: EmailStr
     phone: Optional[str] = None
 
+
 class CandidateResponse(CandidateBase):
     id: int
-    uploaded_at: datetime
+    created_at: datetime
     parsed_json: Optional[Dict[str, Any]] = None
+    status: Optional[str] = None
     model_config = ConfigDict(from_attributes=True)
 
+
 class CandidateWithScore(BaseModel):
-    """Candidate enriched with their latest screening result."""
+    """Candidate enriched with latest screening result."""
     id: int
     name: str
     email: str
     phone: Optional[str] = None
-    uploaded_at: datetime
+    created_at: datetime
     final_score: Optional[float] = None
     status: Optional[str] = "pending"
     job_title: Optional[str] = None
     job_id: Optional[int] = None
     model_config = ConfigDict(from_attributes=True)
+
 
 class ScreeningResultResponse(BaseModel):
     candidate_id: int
@@ -71,9 +84,11 @@ class ScreeningResultResponse(BaseModel):
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
+
 class NotificationCreate(BaseModel):
     user_id: int
     message: str
+
 
 class NotificationResponse(BaseModel):
     id: int
@@ -82,11 +97,14 @@ class NotificationResponse(BaseModel):
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
+
 class BiasReportResponse(BaseModel):
     job_id: int
     report_json: Dict[str, Any]
     generated_at: datetime
     model_config = ConfigDict(from_attributes=True)
+
+
 class SearchQuery(BaseModel):
     query: str
     top_k: Optional[int] = 20

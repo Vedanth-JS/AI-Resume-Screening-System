@@ -14,7 +14,7 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// 401 → Refresh or Logout
+  // 401 → Refresh or Logout
 api.interceptors.response.use(
   (r) => r,
   async (error) => {
@@ -24,7 +24,7 @@ api.interceptors.response.use(
       const refreshToken = localStorage.getItem('refreshToken');
       if (refreshToken) {
         try {
-          const res = await axios.post(`${API_BASE_URL}/auth/refresh`, null, { params: { refresh_token: refreshToken } });
+          const res = await axios.post(`${API_BASE_URL}/auth/refresh`, { refresh_token: refreshToken });
           localStorage.setItem('token', res.data.access_token);
           localStorage.setItem('refreshToken', res.data.refresh_token);
           originalRequest.headers.Authorization = `Bearer ${res.data.access_token}`;
@@ -125,7 +125,17 @@ export const batchService = {
 
 // ─── Analytics ────────────────────────────────────────────────────────────────
 export const analyticsService = {
-  getOverview: () => api.get('/analytics/overview'),
+  getOverview: (days = 30) => api.get('/analytics/overview', { params: { days } }),
+  getFunnel: (jobId) => api.get('/analytics/funnel', { params: jobId ? { job_id: jobId } : {} }),
+  getScoreDistribution: (jobId) => api.get('/analytics/score-distribution', { params: jobId ? { job_id: jobId } : {} }),
+  getTimeToHire: () => api.get('/analytics/time-to-hire'),
+  getSkillTrends: () => api.get('/analytics/skill-trends'),
+  getRecruiters: () => api.get('/analytics/recruiters'),
+  getUniversities: () => api.get('/analytics/universities'),
+  getGeography: () => api.get('/analytics/geography'),
+  getDiversity: () => api.get('/analytics/diversity'),
+  getVolumeTrends: (days = 30) => api.get('/analytics/volume-trends', { params: { days } }),
+  exportCSV: () => api.get('/analytics/export/csv', { responseType: 'blob' }),
 };
 
 // ─── Chat ─────────────────────────────────────────────────────────────────────

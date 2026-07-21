@@ -13,11 +13,11 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 
 # 1. Install Heavy AI Dependencies first (Less frequent changes)
-RUN grep -E "torch|spacy|sentence-transformers" requirements.txt > req_ai.txt && \
-    pip install --no-cache-dir --prefix=/install -r req_ai.txt
+RUN grep -a -E "torch|spacy|sentence-transformers" requirements.txt > req_ai.txt && \
+    pip install --no-cache-dir --prefix=/install --extra-index-url https://download.pytorch.org/whl/cpu -r req_ai.txt
 
 # 2. Install Remaining Core Dependencies
-RUN grep -vE "torch|spacy|sentence-transformers" requirements.txt > req_core.txt && \
+RUN grep -a -vE "torch|spacy|sentence-transformers" requirements.txt > req_core.txt && \
     pip install --no-cache-dir --prefix=/install -r req_core.txt
 
 # 3. Download Spacy Model
@@ -43,11 +43,11 @@ RUN chown -R appuser:appuser /app
 USER appuser
 
 # Expose FastAPI port
-EXPOSE 8000
+EXPOSE 8080
 
 # Health check using curl (installed in runtime)
 # Detailed check for API health
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
+    CMD curl -f http://localhost:8080/health || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "4"]

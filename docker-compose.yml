@@ -1,55 +1,74 @@
+# ─── AI ATS Enterprise — Production Docker Compose v3 ────────────────────────
+# Services: API (x2), Worker, Celery Beat, Flower, Nginx, Frontend, DB, Redis, ChromaDB
+
 services:
-  # ─── API Service (FastAPI Cluster) ───────────────────────────────────────────
+  # ═══════════════════════════════════════════════════════════════════════════
+  # API Service (FastAPI Cluster)
+  # ═══════════════════════════════════════════════════════════════════════════
   api:
-    build: 
+    build:
       context: ./backend
       dockerfile: Dockerfile
-    image: ghcr.io/vedanth-js/ai-ats-api:latest
+    image: ghcr.io/vedanth-js/ai-ats-api:${IMAGE_TAG:-latest}
+    command: >
+      sh -c "python init_db.py && uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers 4"
     deploy:
       replicas: 2
       resources:
         limits:
-          cpus: '0.5'
+          cpus: '1.0'
           memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
       restart_policy:
         condition: on-failure
+        delay: 5s
+        max_attempts: 3
     env_file: .env
     environment:
       PYTHONUNBUFFERED: 1
+      APP_ENV: production
     restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
-      chromadb:
-        condition: service_started
-      db_init:
-        condition: service_completed_successfully
     networks:
       - ats_network
 
-  # ─── Database Initialization (One-time) ────────────────────────────────────
-  db_init:
-    build: ./backend
-    command: python init_db.py
-    env_file: .env
-    environment:
-      PYTHONUNBUFFERED: 1
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-    depends_on:
-      db:
-        condition: service_healthy
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Frontend (React SPA served by Nginx)
+  # ═══════════════════════════════════════════════════════════════════════════
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    image: ghcr.io/vedanth-js/ai-ats-frontend:${IMAGE_TAG:-latest}
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    restart: always
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     networks:
       - ats_network
 
-  # ─── Worker Service (High-Memory for AI) ─────────────────────────────────────
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Worker Service (Celery — Async AI Processing)
+  # ═══════════════════════════════════════════════════════════════════════════
   worker:
     build: ./backend
-    command: celery -A app.workers.celery_app worker --loglevel=info -Q screening,notifications,analytics
+    command: celery -A app.workers.celery_app worker --loglevel=info -Q screening,notifications,analytics --concurrency=2
     env_file: .env
     environment:
       PYTHONUNBUFFERED: 1
@@ -59,19 +78,22 @@ services:
         limits:
           cpus: '1.0'
           memory: 2G
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
-      chromadb:
-        condition: service_started
-      db_init:
-        condition: service_completed_successfully
     networks:
       - ats_network
 
-  # ─── Scheduler Service (Celery Beat) ───────────────────────────────────────
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Scheduler (Celery Beat)
+  # ═══════════════════════════════════════════════════════════════════════════
   beat:
     build: ./backend
     command: celery -A app.workers.celery_app beat --loglevel=info
@@ -83,10 +105,12 @@ services:
     networks:
       - ats_network
 
-  # ─── Monitoring (Flower) ────────────────────────────────────────────────────
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Monitoring Dashboard (Flower)
+  # ═══════════════════════════════════════════════════════════════════════════
   flower:
     image: mher/flower:latest
-    command: celery --broker=redis://redis:6379/0 flower
+    command: celery --broker=redis://redis:6379/0 flower --basic_auth=${FLOWER_BASIC_AUTH:-admin:password}
     ports:
       - "5555:5555"
     restart: always
@@ -96,54 +120,29 @@ services:
     networks:
       - ats_network
 
-  # ─── Internal Dashboard (Streamlit) ────────────────────────────────────────
-  dashboard:
-    build: ./backend
-    command: streamlit run frontend/dashboard.py --server.port 8501 --server.address 0.0.0.0
-    ports:
-      - "8501:8501"
-    env_file: .env
-    restart: on-failure
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-    networks:
-      - ats_network
-
-  # ─── Vector Store (ChromaDB) ────────────────────────────────────────────────
-  chromadb:
-    image: chromadb/chroma:latest
-    volumes:
-      - chromadb_data:/chroma/chroma
-    restart: always
-    environment:
-      - ALLOW_RESET=TRUE
-      - IS_PERSISTENT=TRUE
-      - ANONYMIZED_TELEMETRY=FALSE
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-    networks:
-      - ats_network
-
-  # ─── Reverse Proxy (Nginx) ──────────────────────────────────────────────────
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Reverse Proxy (Nginx)
+  # ═══════════════════════════════════════════════════════════════════════════
   nginx:
     image: nginx:alpine
     ports:
       - "80:80"
+      - "443:443"
     restart: always
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./frontend/dist:/usr/share/nginx/html:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
       api:
+        condition: service_started
+      frontend:
         condition: service_started
     networks:
       - ats_network
 
-  # ─── Database (PostgreSQL) ──────────────────────────────────────────────────
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Database (PostgreSQL + pgvector)
+  # ═══════════════════════════════════════════════════════════════════════════
   db:
     image: ankane/pgvector:v0.5.1
     restart: always
@@ -154,27 +153,55 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pass}
       POSTGRES_DB: ${POSTGRES_DB:-resume_db}
     command: >
-      postgres 
-      -c shared_preload_libraries=pg_stat_statements
+      postgres
+      -c shared_preload_libraries=pg_stat_statements,vector
       -c pg_stat_statements.track=all
+      -c max_connections=100
+      -c shared_buffers=256MB
+      -c effective_cache_size=768MB
+      -c work_mem=16MB
+      -c maintenance_work_mem=128MB
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d resume_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-user} -d ${POSTGRES_DB:-resume_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - ats_network
 
-  # ─── Cache (Redis) ──────────────────────────────────────────────────────────
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Cache (Redis)
+  # ═══════════════════════════════════════════════════════════════════════════
   redis:
     image: redis:7-alpine
     restart: always
-    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save 60 1
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 5
+    networks:
+      - ats_network
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # Vector Store (ChromaDB)
+  # ═══════════════════════════════════════════════════════════════════════════
+  chromadb:
+    image: chromadb/chroma:latest
+    volumes:
+      - chromadb_data:/chroma/chroma
+    restart: always
+    environment:
+      - ALLOW_RESET=FALSE
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    deploy:
+      resources:
+        limits:
+          memory: 1G
     networks:
       - ats_network
 
@@ -185,3 +212,4 @@ networks:
 volumes:
   postgres_data:
   chromadb_data:
+  redis_data:

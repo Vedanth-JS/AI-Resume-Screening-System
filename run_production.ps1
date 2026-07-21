@@ -32,7 +32,7 @@ Write-Host "🌐 Opening Dashboards..." -ForegroundColor Cyan
 Start-Process "http://localhost:80"        # React Frontend (via Nginx)
 Start-Process "http://localhost:8501"    # Streamlit Analytics
 Start-Process "http://localhost:5555"    # Celery Flower Monitor
-Start-Process "http://localhost:8000/docs" # API Documentation (OpenAPI)
+Start-Process "http://localhost:8080/docs" # API Documentation (OpenAPI)
 
 Write-Host "✅ System is Active!" -ForegroundColor Green
-Write-Host "Check http://localhost:8000/health for live status." -ForegroundColor Gray
+Write-Host "Check http://localhost:8080/health for live status." -ForegroundColor Gray

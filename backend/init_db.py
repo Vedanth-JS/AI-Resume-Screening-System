@@ -16,12 +16,15 @@ async def run_alembic_upgrade():
     """
     print("📋 Running Alembic migrations to latest version...")
     try:
-        # Run alembic upgrade head
+        # Run alembic upgrade head with PYTHONPATH set to the app root
+        env = os.environ.copy()
+        env["PYTHONPATH"] = os.path.dirname(os.path.abspath(__file__))
         result = subprocess.run(
             ["alembic", "upgrade", "head"],
             capture_output=True, 
             text=True,
-            check=True
+            check=True,
+            env=env
         )
         print(f"✅ Alembic Success: {result.stdout}")
         return True
@@ -34,6 +37,12 @@ async def run_alembic_upgrade():
 
 async def init_db():
     print("🚀 Antigravity Production DB Hardening Sequence...")
+    
+    # Ensure pgvector extension is enabled
+    print("🔌 Enabling pgvector extension...")
+    from sqlalchemy import text
+    async with async_engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
     
     # 1. Database Schema
     migration_success = await run_alembic_upgrade()

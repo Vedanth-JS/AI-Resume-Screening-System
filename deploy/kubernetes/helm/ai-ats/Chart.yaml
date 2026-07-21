@@ -1,0 +1,7 @@
+apiVersion: v2
+name: ai-ats
+description: AI ATS — Enterprise Applicant Tracking System
+type: application
+version: 2.1.0
+appVersion: "2.1.0"
+keywords: [ats, recruitment, ai, fastapi, react]

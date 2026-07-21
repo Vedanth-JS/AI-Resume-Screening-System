@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from app.db.database import AsyncSessionLocal, async_engine, Base
 from app.models.models import Organization, Role, User, RoleEnum, JobPosting
-from app.api.auth import hash_password
+from app.services.auth_service import _hash_password
 from app.services.job_fetcher import fetch_jobs
 
 # Setup logging
@@ -62,7 +62,7 @@ async def seed_database():
                 
                 admin = User(
                     email="admin@ai-ats.com",
-                    password_hash=hash_password("admin123"),
+                    password_hash=await _hash_password("admin123"),
                     org_id=org.id
                 )
                 if admin_role:
@@ -81,7 +81,7 @@ async def seed_database():
             if not res.scalars().first():
                 logger.info("Fetching jobs from Remotive API...")
                 # Note: job_fetcher uses sync httpx, which is OK in this script but not ideal for high concurrency
-                external_jobs = fetch_jobs()
+                external_jobs = await fetch_jobs()
                 
                 if not external_jobs:
                     logger.warning("Remotive API returned no jobs or failed, using static fallback...")

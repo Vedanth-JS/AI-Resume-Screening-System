@@ -1,27 +1,29 @@
+"""Fetch remote job listings asynchronously from public APIs."""
 import httpx
 from typing import List, Dict
+from ..core.logger import log
 
 REMOTIVE_URL = "https://remotive.com/api/remote_jobs?limit=20"
 
-def fetch_jobs() -> List[Dict]:
-    """Fetch up to 20 remote jobs and map them to our JobPosting schema.
-    Returns a list of dicts with keys: title, description, skills, min_exp, edu.
-    """
+
+async def fetch_jobs() -> List[Dict]:
+    """Fetch up to 20 remote jobs and map them to our JobPosting schema."""
     try:
-        resp = httpx.get(REMOTIVE_URL, timeout=10.0)
-        resp.raise_for_status()
-        data = resp.json()
-        jobs = data.get("jobs", [])[:20]
-        normalized = []
-        for job in jobs:
-            normalized.append({
-                "title": job.get("title", "Untitled"),
-                "description": job.get("description", ""),
-                "skills": job.get("tags", []),
-                "min_exp": 0,
-                "edu": job.get("category", "Not specified"),
-            })
-        return normalized
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(REMOTIVE_URL)
+            resp.raise_for_status()
+            data = resp.json()
+            jobs = data.get("jobs", [])[:20]
+            return [
+                {
+                    "title": j.get("title", "Untitled"),
+                    "description": j.get("description", ""),
+                    "skills": j.get("tags", []),
+                    "min_exp": 0,
+                    "edu": j.get("category", "Not specified"),
+                }
+                for j in jobs
+            ]
     except Exception as e:
-        print(f"Job fetch error: {e}")
+        log.warning("job_fetcher.error", error=str(e))
         return []

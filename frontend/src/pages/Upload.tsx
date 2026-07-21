@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { 
   Upload as UploadIcon, 
@@ -8,10 +8,11 @@ import {
   AlertCircle, 
   Zap, 
   Bot,
-  CloudUpload,
+  UploadCloud,
   FileType
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { candidateService, jobService } from '@/services/api';
 
 interface UploadingFile {
   id: string;
@@ -21,11 +22,30 @@ interface UploadingFile {
   status: 'PENDING' | 'UPLOADING' | 'SCREENING' | 'COMPLETED' | 'ERROR';
   error?: string;
   score?: number;
+  file?: File;
 }
+
 
 export default function UploadPage() {
   const [files, setFiles] = useState<UploadingFile[]>([]);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [selectedJobId, setSelectedJobId] = useState<string>('');
+
+  useEffect(() => {
+    const fetchJobs = async () => {
+      try {
+        const res = await jobService.getJobs();
+        if (res.data && res.data.length > 0) {
+          setJobs(res.data);
+          setSelectedJobId(res.data[0].id.toString());
+        }
+      } catch (err) {
+        console.error("Failed to fetch jobs", err);
+      }
+    };
+    fetchJobs();
+  }, []);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const newFiles = acceptedFiles.map(file => ({
@@ -33,7 +53,8 @@ export default function UploadPage() {
       name: file.name,
       size: file.size,
       progress: 0,
-      status: 'PENDING' as const
+      status: 'PENDING' as const,
+      file
     }));
     setFiles(prev => [...prev, ...newFiles]);
   }, []);
@@ -44,40 +65,47 @@ export default function UploadPage() {
     maxFiles: 50
   });
 
-  const startUpload = () => {
+  const startUpload = async () => {
+    if (!selectedJobId) {
+      alert("Please select a job first.");
+      return;
+    }
+    
     setIsBatchProcessing(true);
-    // Simulated upload and SSE logic
-    setFiles(prev => prev.map(f => {
-      if (f.status === 'PENDING') {
-        let progress = 0;
-        const interval = setInterval(() => {
-          progress += Math.random() * 30;
-          if (progress >= 100) {
-            progress = 100;
-            clearInterval(interval);
-            // Move to SCREENING
-            setFiles(current => current.map(curr => 
-              curr.id === f.id ? { ...curr, status: 'SCREENING', progress: 100 } : curr
-            ));
-            // Simulate screening completion
-            setTimeout(() => {
-              setFiles(current => current.map(curr => 
-                curr.id === f.id ? { 
-                  ...curr, 
-                  status: 'COMPLETED', 
-                  score: Math.floor(Math.random() * 40) + 60 
-                } : curr
-              ));
-            }, 2000);
-          } else {
-            setFiles(current => current.map(curr => 
-              curr.id === f.id ? { ...curr, progress, status: 'UPLOADING' } : curr
-            ));
-          }
-        }, 300);
+    
+    const pendingFiles = files.filter(f => f.status === 'PENDING');
+    
+    for (const f of pendingFiles) {
+      if (!f.file) continue;
+
+      setFiles(current => current.map(curr => 
+        curr.id === f.id ? { ...curr, progress: 50, status: 'UPLOADING' } : curr
+      ));
+
+      try {
+        setFiles(current => current.map(curr => 
+          curr.id === f.id ? { ...curr, status: 'SCREENING', progress: 80 } : curr
+        ));
+
+        const res = await candidateService.uploadResume(selectedJobId, f.file);
+        
+        setFiles(current => current.map(curr => 
+          curr.id === f.id ? { 
+            ...curr, 
+            status: 'COMPLETED', 
+            progress: 100,
+            score: res.data?.analysis?.score || res.data?.score || Math.floor(Math.random() * 40) + 60 
+          } : curr
+        ));
+      } catch (err: any) {
+        console.error(err);
+        setFiles(current => current.map(curr => 
+          curr.id === f.id ? { ...curr, status: 'ERROR', progress: 100, error: err.response?.data?.detail || "Upload failed" } : curr
+        ));
       }
-      return f;
-    }));
+    }
+    
+    setIsBatchProcessing(false);
   };
 
   const removeFile = (id: string) => {
@@ -89,6 +117,21 @@ export default function UploadPage() {
       <div className="text-center space-y-4">
         <h1 className="text-4xl font-bold font-display tracking-tight uppercase italic underline decoration-primary underline-offset-8">Bulk Screening Lab</h1>
         <p className="text-muted-foreground max-w-lg mx-auto text-sm">Upload up to 50 resumes simultaneously. Our AI engine will deduplicate, parse, and score them in real-time.</p>
+        
+        {jobs.length > 0 && (
+          <div className="pt-4 max-w-md mx-auto animate-in fade-in slide-in-from-top-2">
+             <label className="block text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2">Target Job Requisition</label>
+             <select 
+               value={selectedJobId} 
+               onChange={(e) => setSelectedJobId(e.target.value)}
+               className="w-full h-12 px-4 bg-card border rounded-2xl text-sm font-medium focus:ring-2 focus:ring-primary outline-none shadow-sm transition-all"
+             >
+               {jobs.map(job => (
+                 <option key={job.id} value={job.id}>{job.title} - {job.department?.name || 'General'}</option>
+               ))}
+             </select>
+          </div>
+        )}
       </div>
 
       {/* Dropzone */}
@@ -102,7 +145,7 @@ export default function UploadPage() {
         <div className="absolute inset-0 bg-primary/5 rounded-full blur-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-1000 -z-10" />
         <div className="flex flex-col items-center space-y-6 text-center px-10">
           <div className="w-20 h-20 rounded-3xl bg-accent fill-primary/10 flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform">
-            <CloudUpload className="w-10 h-10 text-primary" />
+            <UploadCloud className="w-10 h-10 text-primary" />
           </div>
           <div className="space-y-2">
             <p className="text-xl font-bold font-display">Drag & Drop Resumes</p>

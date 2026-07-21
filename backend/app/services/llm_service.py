@@ -85,12 +85,14 @@ def _generate_xai_fallback(
 
 
 
-def _call_model(prompt: str, context: str = "") -> str:
-    """Low-level Gemini call with error handling."""
+async def _call_model(prompt: str, context: str = "") -> str:
+    """Async Gemini call with error handling — uses run_in_executor."""
     if not _model:
         return ""
+    import asyncio
     try:
-        resp = _model.generate_content(prompt)
+        loop = asyncio.get_running_loop()
+        resp = await loop.run_in_executor(None, _model.generate_content, prompt)
         return resp.text or ""
     except Exception as e:
         log.error("gemini_call_error", context=context, error=str(e))
@@ -103,37 +105,51 @@ class GeminiService:
     @staticmethod
     async def generate_content(prompt: str) -> str:
         """Low-level method to call Gemini and return raw text."""
-        return _call_model(prompt)
+        return await _call_model(prompt)
 
     @staticmethod
     async def extract_resume_data(text: str) -> Dict[str, Any]:
-        """Agent 1 — Resume Parser. Returns structured resume JSON."""
-        prompt = f"""
-You are a resume parser. Extract structured information from the resume text below.
-Return ONLY a valid JSON object with these exact keys (no extra text):
+        """Agent 1 — Resume Parser with few-shot example."""
+        prompt = f"""You are an expert resume parser. Extract structured data from the resume text.
+
+EXAMPLE OUTPUT:
 {{
-  "name": "string",
-  "email": "string or null",
-  "phone": "string or null",
-  "linkedin_url": "string or null",
-  "github_url": "string or null",
-  "skills": ["list", "of", "strings"],
-  "education": [{{"school": "str", "degree": "str", "year": "str"}}],
-  "experience": [{{"company": "str", "role": "str", "duration": "str", "years": 0.0}}],
-  "projects": [{{"title": "str", "description": "str", "technologies": ["str"]}}],
-  "certifications": ["list", "of", "strings"],
-  "total_years_experience": 0.0,
-  "summary": "2-3 sentence professional summary"
+  "name": "Jane Smith",
+  "email": "jane@example.com",
+  "phone": "+1 555-0123",
+  "linkedin_url": null,
+  "github_url": "github.com/janesmith",
+  "skills": ["Python", "FastAPI", "PostgreSQL", "Docker"],
+  "education": [{{"school": "MIT", "degree": "B.S. Computer Science", "year": "2020"}}],
+  "experience": [
+    {{"company": "TechCorp", "role": "Senior Backend Engineer", "duration": "Jan 2021 – Present", "years": 3.5}},
+    {{"company": "StartupX", "role": "Junior Developer", "duration": "Jun 2018 – Dec 2020", "years": 2.5}}
+  ],
+  "projects": [{{"title": "E-commerce API", "description": "Built scalable REST API handling 10k req/s", "technologies": ["FastAPI", "PostgreSQL", "Redis"]}}],
+  "certifications": ["AWS Solutions Architect Associate", "Kubernetes CKAD"],
+  "total_years_experience": 6.0,
+  "summary": "Full-stack engineer with 6 years building high-throughput APIs and cloud-native systems.",
+  "confidence": 0.95
 }}
 
-Resume Text:
+Now parse this resume:
 {text[:6000]}
+
+Return ONLY valid JSON with the same keys as the example. Include a "confidence" field (0-1) estimating extraction accuracy.
 """
-        raw = _call_model(prompt, context="extract_resume_data")
+        raw = await _call_model(prompt, context="extract_resume_data")
         parsed = _parse_json_response(raw)
         if parsed:
             parsed["raw_text"] = text
-        return parsed or {}
+            if "confidence" not in parsed:
+                parsed["confidence"] = 0.7
+        else:
+            # Retry with shorter text
+            raw2 = await _call_model(prompt[:2000], context="extract_resume_data_retry")
+            parsed = _parse_json_response(raw2) or {}
+            parsed["raw_text"] = text
+            parsed["confidence"] = 0.3
+        return parsed
 
     @staticmethod
     async def analyze_jd(jd_text: str) -> Dict[str, Any]:
@@ -155,7 +171,7 @@ You are a Job Description analyst. Analyze the JD below and return ONLY a JSON o
 Job Description:
 {jd_text[:4000]}
 """
-        raw = _call_model(prompt, context="analyze_jd")
+        raw = await _call_model(prompt, context="analyze_jd")
         return _parse_json_response(raw) or {
             "role_title": "Unknown",
             "must_have_skills": [],
@@ -187,7 +203,7 @@ Return ONLY a JSON array of 5 objects:
   }}
 ]
 """
-        raw = _call_model(prompt, context="generate_interview_questions")
+        raw = await _call_model(prompt, context="generate_interview_questions")
         # Try to parse a JSON array
         raw_clean = re.sub(r"```json\s*|```\s*", "", raw or "").strip()
         try:
@@ -229,7 +245,7 @@ Return ONLY a JSON object:
 Job Description:
 {jd_text[:3000]}
 """
-        raw = _call_model(prompt, context="detect_bias_llm")
+        raw = await _call_model(prompt, context="detect_bias_llm")
         return _parse_json_response(raw) or {
             "overall_bias_score": 0.0,
             "recommendations": ["Could not perform LLM bias analysis. GOOGLE_API_KEY required."],
@@ -255,13 +271,13 @@ Provide a concise assessment:
 3. Top 3 Gaps vs. JD
 4. Resume Improvement Tips (2-3 bullets)
 """
-        return _call_model(prompt, context="evaluate_candidate") or "Evaluation unavailable."
+        return await _call_model(prompt, context="evaluate_candidate") or "Evaluation unavailable."
 
     @staticmethod
     async def compare_candidates(jd: str, resume1: str, resume2: str) -> str:
         """Side-by-side candidate comparison."""
         prompt = f"Compare these two candidates for the job:\n{jd}\n\nCandidate 1:\n{resume1[:2000]}\n\nCandidate 2:\n{resume2[:2000]}"
-        return _call_model(prompt, context="compare_candidates") or "Comparison unavailable."
+        return await _call_model(prompt, context="compare_candidates") or "Comparison unavailable."
 
     @staticmethod
     async def generate_xai_reasoning(
@@ -317,7 +333,7 @@ Return ONLY a JSON object:
   "source": "llm"
 }}
 """
-        raw = _call_model(prompt, context="generate_xai_reasoning")
+        raw = await _call_model(prompt, context="generate_xai_reasoning")
         parsed = _parse_json_response(raw)
         if parsed:
             return parsed
@@ -326,4 +342,3 @@ Return ONLY a JSON object:
 
 # Backward Compatibility Alias
 LLMService = GeminiService
-
