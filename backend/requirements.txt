@@ -1,4 +1,4 @@
-﻿fastapi
+fastapi
 uvicorn[standard]
 pydantic[email]>=2.6.0
 pydantic-settings>=2.1.0
@@ -33,3 +33,4 @@ prometheus_fastapi_instrumentator
 asyncpg
 reportlab
 aiosqlite>=0.20.0
+pyotp

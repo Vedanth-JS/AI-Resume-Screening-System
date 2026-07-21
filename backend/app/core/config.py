@@ -102,7 +102,7 @@ class Settings(BaseSettings):
     PASSWORD_EXPIRY_DAYS: int = 0  # 0 = never expires
 
     # ─── MFA Settings ──────────────────────────────────────────────────────
-    MFA_ENFORCE_FOR_ADMINS: bool = True
+    MFA_ENFORCE_FOR_ADMINS: bool = False
     MFA_ENFORCE_GLOBALLY: bool = False
     MFA_TOTP_ISSUER: str = "AI-ATS"
     MFA_BACKUP_CODES_COUNT: int = 8

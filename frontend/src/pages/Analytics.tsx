@@ -20,7 +20,7 @@ function MetricCard({ label, value, delta, up, icon: Icon, suffix = "" }: any) {
         {delta != null && (
           <Badge variant={up ? "success" : "danger"}>
             {up ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-            {delta}{delta.includes("%") ? "" : "%"}
+            {delta}{String(delta).includes("%") ? "" : "%"}
           </Badge>
         )}
       </div>

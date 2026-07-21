@@ -23,6 +23,7 @@ interface UploadingFile {
   error?: string;
   score?: number;
   file?: File;
+  canRetry?: boolean;
 }
 
 
@@ -48,13 +49,26 @@ export default function UploadPage() {
   }, []);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    const newFiles = acceptedFiles.map(file => ({
+    const validFiles = acceptedFiles.filter(file => {
+      // Validate file type
+      if (!file.name.toLowerCase().endsWith('.pdf')) {
+        return false;
+      }
+      // Validate file size (10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        return false;
+      }
+      return true;
+    });
+
+    const newFiles = validFiles.map(file => ({
       id: Math.random().toString(36).substr(2, 9),
       name: file.name,
       size: file.size,
       progress: 0,
       status: 'PENDING' as const,
-      file
+      file,
+      canRetry: true
     }));
     setFiles(prev => [...prev, ...newFiles]);
   }, []);
@@ -64,6 +78,73 @@ export default function UploadPage() {
     accept: { 'application/pdf': ['.pdf'] },
     maxFiles: 50
   });
+
+  const retryFile = async (id: string) => {
+    const file = files.find(f => f.id === id);
+    if (!file || !file.file) return;
+
+    setFiles(current => current.map(curr => 
+      curr.id === id ? { ...curr, status: 'PENDING', progress: 0, error: undefined } : curr
+    ));
+
+    // Trigger upload immediately
+    await processSingleFile(file);
+  };
+
+  const processSingleFile = async (file: UploadingFile) => {
+    if (!file.file) return;
+
+    setFiles(current => current.map(curr => 
+      curr.id === file.id ? { ...curr, progress: 50, status: 'UPLOADING' } : curr
+    ));
+
+    try {
+      setFiles(current => current.map(curr => 
+        curr.id === file.id ? { ...curr, status: 'SCREENING', progress: 80 } : curr
+      ));
+
+      const res = await candidateService.uploadResume(selectedJobId, file.file);
+      
+      // Check for success flag in response
+      if (res.data && res.data.success === false) {
+        throw new Error(res.data.message || 'Upload failed');
+      }
+      
+      setFiles(current => current.map(curr => 
+        curr.id === file.id ? { 
+          ...curr, 
+          status: 'COMPLETED', 
+          progress: 100,
+          score: res.data?.analysis?.score || res.data?.score || Math.floor(Math.random() * 40) + 60 
+        } : curr
+      ));
+    } catch (err: any) {
+      console.error('Upload error:', err);
+      
+      let errorMessage = 'Upload failed';
+      
+      if (err.response) {
+        // Axios error with response
+        if (err.response.data?.detail) {
+          errorMessage = err.response.data.detail;
+        } else if (err.response.data?.message) {
+          errorMessage = err.response.data.message;
+        } else if (typeof err.response.data === 'string') {
+          errorMessage = err.response.data;
+        } else {
+          errorMessage = `Server error: ${err.response.status}`;
+        }
+      } else if (err.message) {
+        errorMessage = err.message;
+      } else if (err.request) {
+        errorMessage = 'Network error - please check your connection';
+      }
+      
+      setFiles(current => current.map(curr => 
+        curr.id === file.id ? { ...curr, status: 'ERROR', progress: 100, error: errorMessage } : curr
+      ));
+    }
+  };
 
   const startUpload = async () => {
     if (!selectedJobId) {
@@ -76,36 +157,17 @@ export default function UploadPage() {
     const pendingFiles = files.filter(f => f.status === 'PENDING');
     
     for (const f of pendingFiles) {
-      if (!f.file) continue;
-
-      setFiles(current => current.map(curr => 
-        curr.id === f.id ? { ...curr, progress: 50, status: 'UPLOADING' } : curr
-      ));
-
-      try {
-        setFiles(current => current.map(curr => 
-          curr.id === f.id ? { ...curr, status: 'SCREENING', progress: 80 } : curr
-        ));
-
-        const res = await candidateService.uploadResume(selectedJobId, f.file);
-        
-        setFiles(current => current.map(curr => 
-          curr.id === f.id ? { 
-            ...curr, 
-            status: 'COMPLETED', 
-            progress: 100,
-            score: res.data?.analysis?.score || res.data?.score || Math.floor(Math.random() * 40) + 60 
-          } : curr
-        ));
-      } catch (err: any) {
-        console.error(err);
-        setFiles(current => current.map(curr => 
-          curr.id === f.id ? { ...curr, status: 'ERROR', progress: 100, error: err.response?.data?.detail || "Upload failed" } : curr
-        ));
-      }
+      await processSingleFile(f);
     }
     
     setIsBatchProcessing(false);
+  };
+
+  const canStartBatch = () => {
+    const pendingFiles = files.filter(f => f.status === 'PENDING');
+    const hasValidFiles = pendingFiles.length > 0;
+    const isProcessing = isBatchProcessing;
+    return hasValidFiles && !isProcessing;
   };
 
   const removeFile = (id: string) => {
@@ -165,11 +227,20 @@ export default function UploadPage() {
              </h3>
              <button 
                onClick={startUpload}
-               disabled={isBatchProcessing}
-               className="flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground rounded-full text-xs font-black uppercase tracking-widest disabled:opacity-50 shadow-xl shadow-primary/20 hover:scale-105 active:scale-95 transition-all"
+               disabled={!canStartBatch()}
+               className="flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground rounded-full text-xs font-black uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-primary/20 hover:scale-105 active:scale-95 transition-all"
              >
-               <Zap className="w-4 h-4 fill-primary-foreground" />
-               Start AI Batch Script
+               {isBatchProcessing ? (
+                 <>
+                   <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                   Processing...
+                 </>
+               ) : (
+                 <>
+                   <Zap className="w-4 h-4 fill-primary-foreground" />
+                   Start AI Batch Script
+                 </>
+               )}
              </button>
           </div>
 
@@ -210,6 +281,29 @@ export default function UploadPage() {
                       />
                    </div>
                 </div>
+
+                {file.status === 'ERROR' && (
+                   <div className="mt-4 flex items-center gap-2">
+                     <button 
+                       onClick={() => retryFile(file.id)}
+                       className="flex-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-primary/90 transition-all"
+                     >
+                       Retry
+                     </button>
+                     <button 
+                       onClick={() => removeFile(file.id)}
+                       className="px-3 py-1.5 bg-destructive/10 text-destructive rounded-lg text-[10px] font-bold uppercase tracking-wider hover:bg-destructive/20 transition-all"
+                     >
+                       Remove
+                     </button>
+                   </div>
+                )}
+
+                {file.status === 'ERROR' && file.error && (
+                   <div className="mt-2 text-[9px] text-destructive font-medium truncate">
+                     {file.error}
+                   </div>
+                )}
 
                 {file.status === 'COMPLETED' && file.score && (
                    <div className="absolute top-2 right-12 flex items-center gap-1.5 px-3 py-1 bg-green-500 text-white rounded-full text-[10px] font-black italic shadow-lg shadow-green-500/20 animate-in zoom-in-50 duration-500">

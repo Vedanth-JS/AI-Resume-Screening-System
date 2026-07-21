@@ -191,7 +191,7 @@ export function Dashboard() {
     setShowModal(false)
   }
 
-  const filteredJobs = jobs.filter(j => j.title.toLowerCase().includes(search.toLowerCase()))
+  const filteredJobs = jobs.filter(j => (j.title || '').toLowerCase().includes(search.toLowerCase()))
 
   return (
     <div className="space-y-10 animate-in fade-in slide-in-from-bottom-6 duration-1000">

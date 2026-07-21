@@ -16,7 +16,11 @@ import {
   ChevronRight,
   Filter,
   Download,
-  Trash2
+  Trash2,
+  Briefcase,
+  Users,
+  BarChart3,
+  Search
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 

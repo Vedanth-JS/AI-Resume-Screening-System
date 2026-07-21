@@ -89,45 +89,86 @@ async def upload_resume(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(RecruiterOnly),
 ):
+    # Validate environment configuration
+    if not settings.GOOGLE_API_KEY:
+        log.error("upload_resume.missing_api_key")
+        raise HTTPException(
+            500, 
+            "Server configuration error: AI processing service not available. Please contact administrator."
+        )
+
     job_repo = JobRepository(db)
     job = await job_repo.get_by_id_org(job_id, request.state.org_id)
     if not job:
         raise HTTPException(404, "Job not found")
 
+    # Validate file size (10MB limit)
     content = await file.read()
-    result = await workflow.process(
-        content,
-        file.filename,
-        job.description,
-        job.required_skills,
-        job.min_experience,
-        request.state.org_id,
-    )
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(400, "File size exceeds 10MB limit")
 
-    cand_repo = CandidateRepository(db)
-    candidate = await cand_repo.create(
-        org_id=request.state.org_id,
-        name=result["candidate"]["name"],
-        email=result["candidate"]["email"],
-        phone=result["candidate"]["phone"],
-        raw_text=result["candidate"]["raw_text"],
-        parsed_json=result["candidate"],
-        status="new",
-    )
+    # Validate file type
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(400, "Only PDF files are supported")
 
-    app_repo = ApplicationRepository(db)
-    application = await app_repo.create(
-        org_id=request.state.org_id,
-        candidate_id=candidate.id,
-        job_id=job.id,
-        score=result["score"],
-        status="SCREENED",
-    )
+    try:
+        result = await workflow.process(
+            content,
+            file.filename,
+            job.description,
+            job.required_skills,
+            job.min_experience,
+            request.state.org_id,
+        )
 
-    rag = RAGService(db)
-    await rag.index_candidate(candidate)
+        # Check if parsing failed
+        if result.get("error"):
+            raise HTTPException(422, f"Failed to process resume: {result['error']}")
 
-    return {"message": "Success", "application_id": application.id, "analysis": result}
+        if not result.get("candidate") or not result["candidate"].get("raw_text"):
+            raise HTTPException(
+                422, 
+                "Failed to extract text from PDF. The file may be corrupt, scanned without OCR, or password-protected."
+            )
+
+        cand_repo = CandidateRepository(db)
+        candidate = await cand_repo.create(
+            org_id=request.state.org_id,
+            name=result["candidate"]["name"],
+            email=result["candidate"]["email"],
+            phone=result["candidate"]["phone"],
+            raw_text=result["candidate"]["raw_text"],
+            parsed_json=result["candidate"],
+            status="new",
+        )
+
+        app_repo = ApplicationRepository(db)
+        application = await app_repo.create(
+            org_id=request.state.org_id,
+            candidate_id=candidate.id,
+            job_id=job.id,
+            score=result["score"],
+            status="SCREENED",
+        )
+
+        rag = RAGService(db)
+        await rag.index_candidate(candidate)
+
+        return {
+            "success": True,
+            "message": "Resume processed successfully",
+            "application_id": application.id,
+            "analysis": result
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error("upload_resume.error", filename=file.filename, error=str(e), exc_info=True)
+        raise HTTPException(
+            500,
+            f"Failed to process resume: {str(e)}. Please try again or contact support if the issue persists."
+        )
 
 
 @router.get("/candidates", response_model=List[schemas.CandidateResponse])
@@ -287,13 +328,39 @@ async def evaluate_candidate_llm(
 
 @router.post("/chat")
 async def chat_candidates(
-    query: str,
+    query: str = Query(..., min_length=1, max_length=500),
     db: AsyncSession = Depends(get_db),
     current_user=Depends(ViewerOnly),
 ):
-    rag = RAGService(db)
-    results = await rag.search_candidates(query, current_user.org_id)
-    return {"results": results}
+    # Validate environment configuration
+    if not settings.GOOGLE_API_KEY:
+        log.error("chat_candidates.missing_api_key")
+        raise HTTPException(
+            500,
+            "Server configuration error: AI search service not available. Please contact administrator."
+        )
+
+    if not query or not query.strip():
+        raise HTTPException(400, "Query cannot be empty")
+
+    try:
+        rag = RAGService(db)
+        results = await rag.search_candidates(query, current_user.org_id)
+        
+        return {
+            "success": True,
+            "results": results,
+            "query": query,
+            "count": len(results)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.error("chat_candidates.error", query=query, error=str(e), exc_info=True)
+        raise HTTPException(
+            500,
+            f"Failed to search candidates: {str(e)}. Please try again or contact support if the issue persists."
+        )
 
 
 @router.get("/bias-report")

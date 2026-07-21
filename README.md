@@ -1,90 +1,251 @@
 <div align="center">
-  <img src="https://via.placeholder.com/150" alt="Antigravity Logo" width="120" stroke="2" />
-  <h1>Antigravity AI ATS</h1>
+  <h1>🤖 AI Resume Screening System</h1>
   <p><strong>Enterprise-Grade Applicant Tracking System powered by Google Gemini & LangGraph</strong></p>
 
-  [![CI Status](https://img.shields.io/github/actions/workflow/status/vedanth-js/ai-ats/ci.yml?branch=main)](https://github.com/vedanth-js/ai-ats/actions)
   [![Python Version](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
   [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
   [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
   <br />
   <a href="#-quick-start">Quick Start</a> •
-  <a href="#-architecture">Architecture</a> •
   <a href="#-features">Features</a> •
-  <a href="ARCHITECTURE.md">System Design</a>
+  <a href="#-tech-stack">Tech Stack</a> •
+  <a href="#-screenshots">Screenshots</a>
 </div>
 
 ---
 
 ## 🚀 Overview
-Antigravity is a high-performance, asynchronous AI Resume Screening System designed to modernise recruitment workflows. It leverages **Gemini-1.5-Flash** for high-speed parsing, **LangGraph** for multi-agent reasoning, and **FastAPI** for a robust, multi-tenant backend.
 
-## 🛠 Architecture
-The system follows a distributed microservices architecture for scalability and reliability.
+An intelligent AI-powered Applicant Tracking System that revolutionizes recruitment workflows. Built with **FastAPI**, **React**, and **Google Gemini AI**, it automates resume parsing, skill matching, bias detection, and candidate scoring with enterprise-grade reliability.
 
-```mermaid
-graph TD
-    A[Nginx Load Balancer] --> B[FastAPI API Replicas]
-    B --> C[(PostgreSQL + pgvector)]
-    B --> D[Redis Broker]
-    D --> E[Celery Workers]
-    E --> F[Gemini AI Pipeline]
-    E --> G[Storage / Analytics]
-    H[Flower] --> D
-```
+### ✨ Key Features
 
-## ✨ Key Features
-- **🧠 AI Screening**: Multi-agent pipeline for Parser, Skill Matcher, Bias Detector, and Scoring.
-- **⚡ Async Bulk Processing**: Screen 100+ resumes in parallel using Celery Chords.
-- **🛡️ Production Ready**: Multi-stage Docker builds, health checks, and 2 replicas by default.
-- **📊 Real-Time Analytics**: Live SSE-based progress tracking and Recharts-powered dashboards.
-- **👮 Enterprise RBAC**: Multi-tenant isolation with Admin, Recruiter, and Viewer roles.
+- **🧠 AI-Powered Screening**: Multi-agent pipeline using Gemini-1.5-Flash for intelligent resume parsing and analysis
+- **⚡ Bulk Processing**: Screen 100+ resumes in parallel with real-time progress tracking
+- **🎯 Smart Matching**: Vector-based semantic search using pgvector embeddings for skill matching
+- **🛡️ Bias Detection**: Automated bias detection in job descriptions and candidate evaluations
+- **📊 Real-Time Analytics**: Live dashboards with candidate funnel metrics and score distributions
+- **🔍 Natural Language Search**: AI chat interface for querying candidates using natural language
+- **👮 Enterprise RBAC**: Multi-tenant isolation with Admin, Recruiter, and Viewer roles
+- **🎨 Modern UI**: Premium glassmorphism dashboard with responsive design
 
-## 📦 Tech Stack
+## � Tech Stack
+
 | Component | Technology | Purpose |
 | :--- | :--- | :--- |
 | **Backend** | FastAPI (Python 3.11) | High-concurrency async API |
-| **Frontend** | React 18 + Vite | Premium glassmorphism dashboard |
-| **Worker pool** | Celery + Redis | Asynchronous screening & reports |
-| **AI Models** | Google Gemini 1.5 | Resume parsing & Reasoning |
-| **Database** | PostgreSQL + pgvector | Relational data & Skill embeddings |
-| **Monitoring** | Flower + Prometheus | System health & Metrics |
+| **Frontend** | React 18 + Vite + TailwindCSS | Modern dashboard UI |
+| **AI Models** | Google Gemini 1.5 Flash | Resume parsing & reasoning |
+| **Database** | PostgreSQL + pgvector | Relational data & vector embeddings |
+| **Task Queue** | Celery + Redis | Asynchronous background processing |
+| **Vector Search** | pgvector | Semantic candidate matching |
+| **Monitoring** | Flower | Celery task monitoring |
 
 ## 🕹 Quick Start
-Get the system running in under 2 minutes:
+
+### Prerequisites
+
+- Python 3.11+
+- Node.js 18+
+- PostgreSQL 15+
+- Redis
+- Google API Key (Gemini)
+
+### Installation
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/vedanth-js/ai-ats.git && cd ai-ats
+   git clone https://github.com/vedanth-js/ai-ats.git
+   cd ai-ats
    ```
 
-2. **Setup environment**
+2. **Backend Setup**
    ```bash
-   cp backend/.env.example backend/.env
-   # Add your GOOGLE_API_KEY to backend/.env
+   cd backend
+   pip install -r requirements.txt
+   cp .env.example .env
+   # Add your GOOGLE_API_KEY to .env
+   python init_db.py
+   uvicorn app.main:app --reload --port 8080
    ```
 
-3. **Launch Docker Suite**
+3. **Frontend Setup**
    ```bash
-   docker compose up -d --build
+   cd frontend
+   npm install
+   npm run dev
    ```
 
-4. **Verify System**
+4. **Start Redis (for Celery)**
    ```bash
-   curl http://localhost:8080/health
-   # Visit http://localhost:4173 for the Dashboard
-   # Visit http://localhost:5555 for Celery Monitor
+   redis-server
    ```
 
-## 📄 Documentation
-- [ARCHITECTURE.md](ARCHITECTURE.md) - Deep dive into system design and scaling choices.
-- [PROJECT_SUMMARY.md](PROJECT_SUMMARY.md) - Placement-ready summary for portfolios.
+5. **Start Celery Worker**
+   ```bash
+   cd backend
+   celery -A app.workers.celery_app worker --loglevel=info
+   ```
+
+### Docker Deployment
+
+```bash
+docker compose up -d --build
+```
+
+Access the application at:
+- **Frontend**: http://localhost:4173
+- **Backend API**: http://localhost:8080
+- **API Docs**: http://localhost:8080/docs
+- **Celery Monitor**: http://localhost:5555
+
+## 📋 Core Features
+
+### Resume Upload & Screening
+- **Drag & Drop Upload**: Upload multiple PDF resumes with validation
+- **Real-time Progress**: Track parsing, screening, and scoring status
+- **Error Handling**: Robust error recovery with retry functionality
+- **File Validation**: PDF-only uploads with 10MB size limit
+
+### AI-Powered Analysis
+- **Resume Parsing**: Extract candidate details, skills, and experience
+- **Skill Matching**: Keyword and semantic-based skill evaluation
+- **Experience Scoring**: Compare candidate experience against job requirements
+- **Bias Detection**: Identify and flag biased language in job descriptions
+
+### Candidate Management
+- **Vector Search**: Natural language search across candidate pool
+- **AI Chat**: Query candidates using conversational interface
+- **Score Filtering**: Filter candidates by match scores
+- **Application Tracking**: Track candidates through hiring pipeline
+
+### Analytics Dashboard
+- **Funnel Metrics**: Visualize candidate pipeline stages
+- **Score Distribution**: Analyze candidate score distributions
+- **Time-to-Hire**: Track recruitment efficiency metrics
+- **Skill Trends**: Monitor in-demand skills over time
 
 ---
 
-## 📜 License
-Distributed under the MIT License. See `LICENSE` for more information.
+## ✨ Platform Walkthrough
+
+Below are the major modules of the AI Resume Screening System.
+
+## 📸 Application Screenshots
+
+### 🔐 Authentication & Dashboard
 
 <div align="center">
-  <sub>Built with ❤️ by the Antigravity Team</sub>
+
+<img src="screenshots/README_01_Login_Dashboard.png" width="100%"/>
+
+</div>
+
+> Secure authentication and a modern recruitment dashboard with real-time ATS metrics.
+
+---
+
+### 🤖 AI Interview & Candidate Management
+
+<div align="center">
+
+<img src="screenshots/README_02_Interview_Candidates.png" width="100%"/>
+
+</div>
+
+> AI-generated interview kits, candidate scoring, smart shortlisting, and recruiter workflow.
+
+---
+
+### 📊 Analytics Dashboard
+
+<div align="center">
+
+<img src="screenshots/README_03_Analytics.png" width="100%"/>
+
+</div>
+
+> Recruitment analytics, hiring funnel, score distribution, hiring trends, and bias monitoring.
+
+---
+
+### 📄 Bulk Resume Screening & AI Chat
+
+<div align="center">
+
+<img src="screenshots/README_04_Upload_AIChat.png" width="100%"/>
+
+</div>
+
+> Upload hundreds of resumes, process them in parallel, and search candidates using natural language.
+
+---
+
+## 🔧 Configuration
+
+### Environment Variables
+
+```env
+# Database
+DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/resume_db
+
+# Redis
+REDIS_URL=redis://localhost:6379/0
+
+# AI Services
+GOOGLE_API_KEY=your_google_api_key_here
+LLM_MODEL=gemini-1.5-flash
+
+# Security
+SECRET_KEY=your_secret_key_here
+ALGORITHM=HS256
+```
+
+## 🧪 Testing
+
+```bash
+# Backend tests
+cd backend
+pytest
+
+# Frontend tests
+cd frontend
+npm test
+```
+
+## 📄 API Documentation
+
+Interactive API documentation available at `/docs` when running the backend.
+
+### Key Endpoints
+
+- `POST /api/resume/upload` - Upload and screen resume
+- `GET /api/jobs` - List job postings
+- `POST /api/chat` - AI-powered candidate search
+- `GET /api/analytics/overview` - Dashboard metrics
+
+## 🤝 Contributing
+
+Contributions are welcome! Please follow these steps:
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## 📜 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- Google Gemini AI for powerful language models
+- FastAPI for the amazing async framework
+- The open-source community for excellent tools
+
+---
+
+<div align="center">
+  <sub>Built with ❤️ for modern recruitment teams</sub>
 </div>

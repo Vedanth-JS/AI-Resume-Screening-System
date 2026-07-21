@@ -22,8 +22,8 @@ export function Jobs() {
   }
 
   const filtered = jobs.filter(j =>
-    j.title.toLowerCase().includes(search.toLowerCase()) ||
-    (j.required_skills || []).some(s => s.toLowerCase().includes(search.toLowerCase()))
+    (j.title || '').toLowerCase().includes(search.toLowerCase()) ||
+    (j.required_skills || []).some(s => (s || '').toLowerCase().includes(search.toLowerCase()))
   )
 
   return (
