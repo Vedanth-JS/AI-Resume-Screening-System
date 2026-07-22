@@ -83,7 +83,7 @@ export default function AnalyticsPage() {
       setTimeToHire(tth.status === "fulfilled" ? tth.value.data : null);
       setSkills(sk.status === "fulfilled" ? sk.value.data : null);
       setVolumeTrends(vt.status === "fulfilled" ? vt.value.data : []);
-      setDiversity(div.status === "fulfilled" ? div.value.data : null);
+      setDiversity(div.status === "fulfilled" ? (div.value?.data ?? null) : null);
     } finally {
       setLoading(false);
     }
