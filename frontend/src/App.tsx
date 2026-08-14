@@ -5,17 +5,19 @@ import { ErrorBoundary } from "./components/ui/ErrorBoundary";
 import { authService } from "./services/api";
 
 // Direct imports — no lazy() to avoid Vite ESM module namespace issues in dev
-import Dashboard  from "./pages/Dashboard";
-import Jobs       from "./pages/Jobs";
-import Screening  from "./pages/Screening";
-import Analytics  from "./pages/Analytics";
-import Upload     from "./pages/Upload";
-import Comparison from "./pages/Comparison";
-import Interview  from "./pages/Interview";
-import Login      from "./components/Login";
-import Register   from "./components/Register";
-import RAGChat    from "./components/RAGChat";
-import JobDetail  from "./components/JobDetail";
+import Dashboard    from "./pages/Dashboard";
+import Jobs         from "./pages/Jobs";
+import Screening    from "./pages/Screening";
+import Analytics    from "./pages/Analytics";
+import Upload       from "./pages/Upload";
+import Comparison   from "./pages/Comparison";
+import Interview    from "./pages/Interview";
+import JDComparison from "./pages/JDComparison";
+import Login        from "./components/Login";
+import Register     from "./components/Register";
+import RAGChat      from "./components/RAGChat";
+import JobDetail    from "./components/JobDetail";
+
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => !!localStorage.getItem("token"));
@@ -73,7 +75,9 @@ export default function App() {
               <Route path="/chat"           element={<RAGChat />} />
               <Route path="/compare/:id"    element={<Comparison />} />
               <Route path="/interview/:id"  element={<Interview />} />
+              <Route path="/jd-compare"     element={<JDComparison />} />
               <Route path="*"              element={<Navigate to="/dashboard" replace />} />
+
             </Routes>
           </ErrorBoundary>
         </div>

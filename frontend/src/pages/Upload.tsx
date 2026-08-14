@@ -22,9 +22,30 @@ interface UploadingFile {
   status: 'PENDING' | 'UPLOADING' | 'SCREENING' | 'COMPLETED' | 'ERROR';
   error?: string;
   score?: number;
+  verdict?: string;
   file?: File;
   canRetry?: boolean;
+  task_id?: string;
+  currentStep?: string;
 }
+
+// Pipeline step labels keyed by progress range
+const PIPELINE_STEPS = [
+  { from: 0,  to: 14,  label: 'Queued',                 icon: '⏳' },
+  { from: 15, to: 29,  label: 'Checking cache',          icon: '💾' },
+  { from: 30, to: 44,  label: 'Parsing resume',          icon: '📄' },
+  { from: 45, to: 64,  label: 'Generating embeddings',   icon: '🧠' },
+  { from: 65, to: 79,  label: 'Scoring (keyword+semantic)', icon: '📊' },
+  { from: 80, to: 89,  label: 'XAI reasoning',           icon: '✨' },
+  { from: 90, to: 99,  label: 'Saving results',          icon: '💾' },
+  { from: 100, to: 100, label: 'Complete!',              icon: '✅' },
+]
+
+function getStepLabel(progress: number): { label: string; icon: string } {
+  return PIPELINE_STEPS.find(s => progress >= s.from && progress <= s.to)
+    ?? { label: 'Processing…', icon: '⚙️' }
+}
+
 
 
 export default function UploadPage() {
@@ -94,57 +115,110 @@ export default function UploadPage() {
   const processSingleFile = async (file: UploadingFile) => {
     if (!file.file) return;
 
-    setFiles(current => current.map(curr => 
-      curr.id === file.id ? { ...curr, progress: 50, status: 'UPLOADING' } : curr
+    setFiles(current => current.map(curr =>
+      curr.id === file.id ? { ...curr, progress: 20, status: 'UPLOADING', currentStep: 'Uploading…' } : curr
     ));
 
     try {
-      setFiles(current => current.map(curr => 
-        curr.id === file.id ? { ...curr, status: 'SCREENING', progress: 80 } : curr
+      setFiles(current => current.map(curr =>
+        curr.id === file.id ? { ...curr, status: 'SCREENING', progress: 30, currentStep: 'Starting AI pipeline…' } : curr
       ));
 
       const res = await candidateService.uploadResume(selectedJobId, file.file);
-      
-      // Check for success flag in response
+
       if (res.data && res.data.success === false) {
         throw new Error(res.data.message || 'Upload failed');
       }
-      
-      setFiles(current => current.map(curr => 
-        curr.id === file.id ? { 
-          ...curr, 
-          status: 'COMPLETED', 
-          progress: 100,
-          score: res.data?.analysis?.score || res.data?.score || Math.floor(Math.random() * 40) + 60 
-        } : curr
-      ));
+
+      // Check if we got a task_id for async polling
+      const taskId = res.data?.task_id;
+      const analysis = res.data?.analysis;
+
+      if (taskId) {
+        // Poll Celery task status every 2 seconds
+        let done = false;
+        let attempts = 0;
+        const MAX_ATTEMPTS = 90; // max 3 min
+
+        setFiles(current => current.map(curr =>
+          curr.id === file.id ? { ...curr, task_id: taskId, currentStep: 'AI pipeline running…' } : curr
+        ));
+
+        while (!done && attempts < MAX_ATTEMPTS) {
+          await new Promise(r => setTimeout(r, 2000));
+          attempts++;
+
+          try {
+            const statusRes = await fetch(`/api/tasks/${taskId}/status`, {
+              headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` }
+            });
+            const statusData = await statusRes.json();
+            const pct = Math.min(statusData.progress ?? 30, 99);
+            const step = statusData.current_step || getStepLabel(pct).label;
+
+            setFiles(current => current.map(curr =>
+              curr.id === file.id ? { ...curr, progress: pct, currentStep: step } : curr
+            ));
+
+            if (['SUCCESS', 'FAILED', 'REVOKED'].includes(statusData.status)) {
+              done = true;
+              if (statusData.status === 'SUCCESS') {
+                const score = statusData.result?.score ?? analysis?.score;
+                const verdict = statusData.result?.verdict ?? analysis?.breakdown?.xai?.verdict;
+                setFiles(current => current.map(curr =>
+                  curr.id === file.id
+                    ? { ...curr, status: 'COMPLETED', progress: 100, score, verdict, currentStep: 'Complete!' }
+                    : curr
+                ));
+              } else {
+                throw new Error(statusData.error || 'Task failed');
+              }
+            }
+          } catch (pollErr) {
+            // Ignore transient poll errors, keep retrying
+          }
+        }
+
+        if (!done) {
+          // Timed out — show best-effort result
+          setFiles(current => current.map(curr =>
+            curr.id === file.id ? { ...curr, status: 'COMPLETED', progress: 100, score: res.data?.analysis?.score, currentStep: 'Complete (timed out polling)' } : curr
+          ));
+        }
+      } else {
+        // Synchronous response (no task_id)
+        const score = analysis?.score ?? res.data?.score;
+        const verdict = analysis?.breakdown?.xai?.verdict;
+        setFiles(current => current.map(curr =>
+          curr.id === file.id
+            ? { ...curr, status: 'COMPLETED', progress: 100, score, verdict, currentStep: 'Complete!' }
+            : curr
+        ));
+      }
     } catch (err: any) {
       console.error('Upload error:', err);
-      
+
       let errorMessage = 'Upload failed';
-      
-      if (err.response) {
-        // Axios error with response
-        if (err.response.data?.detail) {
-          errorMessage = err.response.data.detail;
-        } else if (err.response.data?.message) {
-          errorMessage = err.response.data.message;
-        } else if (typeof err.response.data === 'string') {
-          errorMessage = err.response.data;
-        } else {
-          errorMessage = `Server error: ${err.response.status}`;
-        }
+      if (err.response?.data?.detail) {
+        errorMessage = err.response.data.detail;
+      } else if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (typeof err.response?.data === 'string') {
+        errorMessage = err.response.data;
+      } else if (err.response?.status) {
+        errorMessage = `Server error: ${err.response.status}`;
       } else if (err.message) {
         errorMessage = err.message;
       } else if (err.request) {
-        errorMessage = 'Network error - please check your connection';
+        errorMessage = 'Network error — please check your connection';
       }
-      
-      setFiles(current => current.map(curr => 
+
+      setFiles(current => current.map(curr =>
         curr.id === file.id ? { ...curr, status: 'ERROR', progress: 100, error: errorMessage } : curr
       ));
     }
   };
+
 
   const startUpload = async () => {
     if (!selectedJobId) {
