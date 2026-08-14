@@ -56,15 +56,17 @@ class PaginatedResponse(BaseModel, Generic[T]):
 # ─── Jobs ─────────────────────────────────────────────────────────────────────
 
 class JobBase(BaseModel):
-    title: str = Field(..., min_length=2, max_length=255, examples=["Senior Python Engineer"])
-    description: str = Field(..., min_length=50, examples=["We are looking for..."])
+    title: str = Field(..., max_length=255, examples=["Senior Python Engineer"])
+    description: str = Field(..., examples=["We are looking for..."])
     required_skills: Any = Field(default_factory=list, description="List or dict of required skills")
     min_experience: int = Field(default=0, ge=0, le=30)
     required_education: str = Field(default="Not Specified")
 
 
 class JobCreate(JobBase):
-    pass
+    title: str = Field(..., min_length=2, max_length=255, examples=["Senior Python Engineer"])
+    description: str = Field(..., min_length=50, examples=["We are looking for..."])
+
 
 
 class JobResponse(JobBase):

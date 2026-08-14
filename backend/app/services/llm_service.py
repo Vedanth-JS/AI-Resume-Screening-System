@@ -59,7 +59,7 @@ _llm_retry = _make_retry_decorator()
 if settings.GOOGLE_API_KEY:
     genai.configure(api_key=settings.GOOGLE_API_KEY)
     _model = genai.GenerativeModel("gemini-1.5-flash")
-    _embedding_model = "models/text-embedding-004"
+    _embedding_model = "models/gemini-embedding-2"
 else:
     _model = None
     _embedding_model = None
@@ -76,6 +76,7 @@ def _embed_with_retry(text: str, task_type: str = "retrieval_document") -> List[
         model=_embedding_model,
         content=text,
         task_type=task_type,
+        output_dimensionality=768,
         title="Resume Content",
     )
     return result["embedding"]

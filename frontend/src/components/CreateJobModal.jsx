@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Briefcase, X, Loader2, Tag, Zap, AlertCircle } from 'lucide-react'
-import { jobService } from '../services/api'
+import { jobService, extractErrorMessage } from '../services/api'
 
 export function CreateJobModal({ onClose, onCreated }) {
   const [form, setForm] = useState({
@@ -41,7 +41,7 @@ export function CreateJobModal({ onClose, onCreated }) {
       if (onCreated) onCreated(res.data)
       onClose()
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to create job. Please try again.')
+      setError(extractErrorMessage(err, 'Failed to create job. Please try again.'))
     } finally {
       setLoading(false)
     }

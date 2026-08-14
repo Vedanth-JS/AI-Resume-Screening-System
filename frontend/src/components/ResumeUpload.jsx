@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { Upload, X, CheckCircle, FileText, Loader2, AlertCircle } from 'lucide-react'
-import { candidateService } from '../services/api'
+import { candidateService, extractErrorMessage } from '../services/api'
 
 export function ResumeUpload({ jobId, onComplete }) {
   const [file, setFile] = useState(null)
@@ -31,7 +31,7 @@ export function ResumeUpload({ jobId, onComplete }) {
     } catch (err) {
       console.error(err)
       setStatus('error')
-      setError(err.response?.data?.detail || 'Upload failed')
+      setError(extractErrorMessage(err, 'Upload failed'))
     }
   }
 

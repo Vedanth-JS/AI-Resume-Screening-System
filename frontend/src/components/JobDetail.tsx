@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { Card, Button, Badge, ProgressBar } from "./ui";
-import { jobService, candidateService } from "../services/api";
+import { jobService, candidateService, extractErrorMessage } from "../services/api";
 import api from "../services/api";
 import { Briefcase, ArrowLeft, Users, Brain, Zap } from "lucide-react";
 
@@ -38,7 +38,7 @@ export default function JobDetail() {
       setFile(null);
       fetchData();
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Upload failed");
+      alert(extractErrorMessage(err, "Upload failed"));
     } finally {
       setUploading(false);
     }

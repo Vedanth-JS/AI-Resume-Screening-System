@@ -12,7 +12,7 @@ import {
   FileType
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { candidateService, jobService } from '@/services/api';
+import { candidateService, jobService, extractErrorMessage } from '@/services/api';
 
 interface UploadingFile {
   id: string;
@@ -198,20 +198,7 @@ export default function UploadPage() {
     } catch (err: any) {
       console.error('Upload error:', err);
 
-      let errorMessage = 'Upload failed';
-      if (err.response?.data?.detail) {
-        errorMessage = err.response.data.detail;
-      } else if (err.response?.data?.message) {
-        errorMessage = err.response.data.message;
-      } else if (typeof err.response?.data === 'string') {
-        errorMessage = err.response.data;
-      } else if (err.response?.status) {
-        errorMessage = `Server error: ${err.response.status}`;
-      } else if (err.message) {
-        errorMessage = err.message;
-      } else if (err.request) {
-        errorMessage = 'Network error — please check your connection';
-      }
+      const errorMessage = extractErrorMessage(err, 'Upload failed');
 
       setFiles(current => current.map(curr =>
         curr.id === file.id ? { ...curr, status: 'ERROR', progress: 100, error: errorMessage } : curr

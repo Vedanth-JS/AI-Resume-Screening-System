@@ -39,7 +39,7 @@ class RAGService:
                 ),
                 {
                     "vec": vector,
-                    "mv": "text-embedding-004",
+                    "mv": "gemini-embedding-2",
                     "cid": candidate.id,
                 },
             )
@@ -52,7 +52,7 @@ class RAGService:
                 {
                     "cid": candidate.id,
                     "vec": vector,
-                    "mv": "text-embedding-004",
+                    "mv": "gemini-embedding-2",
                 },
             )
         await self.db.commit()

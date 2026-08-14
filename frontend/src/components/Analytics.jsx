@@ -8,7 +8,7 @@ import {
   Chart as ChartJS, ArcElement, Tooltip, Legend,
   CategoryScale, LinearScale, BarElement, PointElement, LineElement
 } from 'chart.js'
-import api from '../services/api'
+import api, { extractErrorMessage } from '../services/api'
 
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, PointElement, LineElement)
 
@@ -56,7 +56,7 @@ export function Analytics() {
       setData(res.data)
       setError('')
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to load analytics.')
+      setError(extractErrorMessage(err, 'Failed to load analytics.'))
     } finally {
       setLoading(false)
       setRefreshing(false)

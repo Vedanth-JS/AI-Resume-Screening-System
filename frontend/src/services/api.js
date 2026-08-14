@@ -162,4 +162,47 @@ export const comparisonService = {
     api.get(`/jobs/${jobId}/compare`, { params: { candidate_ids: candidateIds.join(',') } }),
 };
 
+export const extractErrorMessage = (err, defaultMessage = 'An unexpected error occurred') => {
+  if (!err) return defaultMessage;
+  
+  if (err.response?.data?.detail) {
+    const detail = err.response.data.detail;
+    if (typeof detail === 'string') {
+      return detail;
+    }
+    if (Array.isArray(detail)) {
+      return detail.map(item => {
+        if (typeof item === 'string') return item;
+        return item.msg || JSON.stringify(item);
+      }).join(', ');
+    }
+    if (typeof detail === 'object') {
+      return detail.msg || JSON.stringify(detail);
+    }
+  }
+  
+  if (err.response?.data?.message) {
+    return err.response.data.message;
+  }
+  
+  if (typeof err.response?.data === 'string') {
+    return err.response.data;
+  }
+  
+  if (err.response?.status) {
+    return `Server error: ${err.response.status}`;
+  }
+  
+  if (err.message) {
+    return err.message;
+  }
+  
+  if (err.request) {
+    return 'Network error — please check your connection';
+  }
+  
+  return defaultMessage;
+};
+
 export default api;
+

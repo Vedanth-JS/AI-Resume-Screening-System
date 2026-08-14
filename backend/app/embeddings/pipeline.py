@@ -26,7 +26,7 @@ class EmbeddingPipeline:
             await self.db.execute(
                 text("""
                     INSERT INTO resume_embeddings (candidate_id, embedding, model_version, created_at, updated_at)
-                    VALUES (:cid, :vec, 'text-embedding-004', NOW(), NOW())
+                    VALUES (:cid, :vec, 'gemini-embedding-2', NOW(), NOW())
                     ON CONFLICT (candidate_id) DO UPDATE SET
                         embedding = EXCLUDED.embedding,
                         model_version = EXCLUDED.model_version,

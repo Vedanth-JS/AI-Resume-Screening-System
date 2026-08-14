@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button, Card, Input } from "./ui";
-import { authService } from "../services/api";
+import { authService, extractErrorMessage } from "../services/api";
 import { Zap } from "lucide-react";
 
 export default function Register() {
@@ -20,7 +20,7 @@ export default function Register() {
       await authService.register(email, password, orgName);
       navigate("/login", { state: { message: "Registration successful! Please sign in." } });
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Registration failed");
+      setError(extractErrorMessage(err, "Registration failed"));
     } finally {
       setLoading(false);
     }
