@@ -105,6 +105,34 @@ def batch_complete_callback(results: List[Any], batch_job_id: int):
     return {"batch_job_id": batch_job_id, "completed": len(results)}
 
 
+@celery_app.task(name="app.workers.tasks.batch.finalize_batch")
+def finalize_batch(results: List[Any], batch_id: str, job_id: int):
+    """
+    Chord callback for bulk uploads in api/bulk.py.
+    Aggregates screening results and updates Redis with progress.
+    """
+    import redis
+    import os
+
+    successful = [r for r in results if isinstance(r, dict) and r.get("status") == "success"]
+    failed = [r for r in results if not isinstance(r, dict) or r.get("status") != "success"]
+
+    r_client = redis.Redis.from_url(os.getenv("REDIS_URL", "redis://redis:6379/0"))
+
+    status_data = {
+        "batch_id": batch_id,
+        "status": "COMPLETED",
+        "progress": 100,
+        "total": len(results),
+        "successful": len(successful),
+        "failed": len(failed),
+    }
+    r_client.set(f"batch_status:{batch_id}", json.dumps(status_data), ex=86400)
+
+    logger.info(f"Finalized batch {batch_id} for job {job_id}: {len(successful)} success, {len(failed)} failed")
+    return {"batch_id": batch_id, "status": "completed"}
+
+
 @celery_app.task(name="app.workers.tasks.batch.update_batch_progress")
 def update_batch_progress(batch_job_id: int):
     """Poll-based progress updater: counts SCREENED applications for a batch job."""

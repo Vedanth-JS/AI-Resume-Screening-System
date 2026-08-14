@@ -93,18 +93,18 @@ async def test_full_workflow(client, auth_token):
     # 1. Create a job
     job_resp = await client.post("/api/jobs", json={
         "title": "Backend Engineer",
-        "description": "Build scalable APIs with Python and FastAPI.",
+        "description": "Build scalable APIs with Python and FastAPI. Focus on optimization.",
         "required_skills": ["python", "fastapi", "postgresql"],
         "min_experience": 3,
         "required_education": "Bachelor's",
     }, headers=headers)
-    assert job_resp.status_code == 200
+    assert job_resp.status_code == 201
     job_id = job_resp.json()["id"]
 
     # 2. List jobs
     jobs_resp = await client.get("/api/jobs", headers=headers)
     assert jobs_resp.status_code == 200
-    assert any(j["id"] == job_id for j in jobs_resp.json())
+    assert any(j["id"] == job_id for j in jobs_resp.json()["items"])
 
     # 3. Get job detail
     detail_resp = await client.get(f"/api/jobs/{job_id}", headers=headers)
@@ -217,12 +217,12 @@ async def test_403_insufficient_permissions(client):
 
     # Viewer cannot create jobs (requires RECRUITER)
     resp = await client.post("/api/jobs", json={
-        "title": "Should Fail", "description": "Test",
+        "title": "Should Fail", "description": "We need a Software Engineer with at least 5 years of experience.",
         "required_skills": [], "min_experience": 0,
     }, headers=headers)
     # May succeed if viewer registered as RECRUITER by default
     # This tests role-based access exists
-    assert resp.status_code in [200, 403]
+    assert resp.status_code in [201, 403]
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

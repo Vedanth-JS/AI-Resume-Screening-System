@@ -140,13 +140,13 @@ async def test_create_and_list_jobs(client, auth_token):
     # Create job
     job_data = {
         "title": "Senior Python Engineer",
-        "description": "We need a Python expert with FastAPI experience.",
+        "description": "We need a Python expert with FastAPI experience and backend engineering skills.",
         "required_skills": ["python", "fastapi", "postgresql"],
         "min_experience": 3,
         "required_education": "Bachelor's Degree",
     }
     resp = await client.post("/api/jobs", json=job_data, headers=headers)
-    assert resp.status_code == 200
+    assert resp.status_code == 201
     job = resp.json()
     assert job["title"] == "Senior Python Engineer"
     job_id = job["id"]
@@ -155,7 +155,7 @@ async def test_create_and_list_jobs(client, auth_token):
     resp = await client.get("/api/jobs", headers=headers)
     assert resp.status_code == 200
     jobs = resp.json()
-    assert any(j["id"] == job_id for j in jobs)
+    assert any(j["id"] == job_id for j in jobs["items"])
 
 @pytest.mark.asyncio
 async def test_get_job_not_found(client, auth_token):
@@ -280,4 +280,7 @@ async def test_get_candidates_empty(client, auth_token):
     headers = {"Authorization": f"Bearer {auth_token}"}
     resp = await client.get("/api/candidates", headers=headers)
     assert resp.status_code == 200
-    assert isinstance(resp.json(), list)
+    data = resp.json()
+    assert isinstance(data, dict)
+    assert "items" in data
+    assert isinstance(data["items"], list)

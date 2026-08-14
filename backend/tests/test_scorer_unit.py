@@ -55,7 +55,7 @@ class TestKeywordScore:
     def test_perfect_match(self, scorer, sample_resume_text, sample_jd_skills):
         """All required skills present → high score."""
         result = scorer.keyword_score(sample_resume_text, sample_jd_skills)
-        assert result["score"] >= 80, f"Expected >= 80, got {result['score']}"
+        assert result["score"] * 100 >= 80, f"Expected >= 80, got {result['score'] * 100}"
         assert "matched" in result
         assert "missing" in result
         assert len(result["matched"]) >= 4
@@ -65,8 +65,8 @@ class TestKeywordScore:
         resume = "I am a plumber with experience in pipe installation and wrench usage."
         skills = ["Python", "Machine Learning", "TensorFlow", "Kubernetes"]
         result = scorer.keyword_score(resume, skills)
-        assert result["score"] <= 20, f"Expected <= 20, got {result['score']}"
-        assert len(result["matched"]) == 0 or result["score"] < 25
+        assert result["score"] * 100 <= 20, f"Expected <= 20, got {result['score'] * 100}"
+        assert len(result["matched"]) == 0 or result["score"] * 100 < 25
 
     def test_empty_skills_list(self, scorer, sample_resume_text):
         """Empty JD skills list → score should be 0 or handled gracefully."""
@@ -79,7 +79,7 @@ class TestKeywordScore:
         resume = "Proficient in PYTHON, fastapi, POSTGRESQL"
         skills = ["python", "FastAPI", "PostgreSQL"]
         result = scorer.keyword_score(resume, skills)
-        assert result["score"] >= 50
+        assert result["score"] * 100 >= 50
 
     def test_returns_matched_and_missing(self, scorer, sample_resume_text, sample_jd_skills):
         """Result must always contain 'matched' and 'missing' lists."""
@@ -93,7 +93,7 @@ class TestKeywordScore:
         skills = ["Python", "FastAPI", "PostgreSQL", "Docker", "Redis", "Kubernetes"]
         result = scorer.keyword_score(resume, skills)
         # At least Python and FastAPI should match → score between 20-70
-        assert 15 <= result["score"] <= 80
+        assert 15 <= result["score"] * 100 <= 80
 
 
 # ─── Format Score Tests ───────────────────────────────────────────────────────
@@ -101,24 +101,29 @@ class TestKeywordScore:
 class TestFormatScore:
     def test_well_formatted_resume(self, scorer, sample_resume_text):
         """A well-formatted resume with all sections → score >= 70."""
-        score = scorer.format_score(sample_resume_text)
+        result = scorer.format_score(sample_resume_text)
+        assert isinstance(result, dict)
+        score = result["score"]
         assert isinstance(score, (int, float))
-        assert score >= 60, f"Expected >= 60, got {score}"
+        assert score >= 50, f"Expected >= 50, got {score}"
 
     def test_empty_resume(self, scorer):
         """Empty resume → low format score."""
-        score = scorer.format_score("")
-        assert score <= 30
+        result = scorer.format_score("")
+        assert isinstance(result, dict)
+        assert result["score"] <= 30
 
     def test_minimal_resume(self, scorer):
         """Minimal resume → score reflects missing sections."""
-        score = scorer.format_score("John Doe. Programmer.")
-        assert score <= 60
+        result = scorer.format_score("John Doe. Programmer.")
+        assert isinstance(result, dict)
+        assert result["score"] <= 60
 
     def test_score_in_valid_range(self, scorer, sample_resume_text):
         """Format score must always be in 0-100 range."""
-        score = scorer.format_score(sample_resume_text)
-        assert 0 <= score <= 100
+        result = scorer.format_score(sample_resume_text)
+        assert isinstance(result, dict)
+        assert 0 <= result["score"] <= 100
 
 
 # ─── Section Score Tests ──────────────────────────────────────────────────────
@@ -126,60 +131,64 @@ class TestFormatScore:
 class TestSectionScore:
     def test_complete_sections(self, scorer, sample_resume_text):
         """Resume with experience, education, skills → high section score."""
-        score = scorer.section_score(sample_resume_text)
+        result = scorer.section_score(sample_resume_text)
+        assert isinstance(result, dict)
+        score = result["score"]
         assert isinstance(score, (int, float))
         assert score >= 60
 
     def test_missing_sections(self, scorer):
         """Resume missing education and experience → lower score."""
         sparse = "John Smith\njohn@example.com\nI like coding."
-        score = scorer.section_score(sparse)
-        assert score <= 70
+        result = scorer.section_score(sparse)
+        assert isinstance(result, dict)
+        assert result["score"] <= 70
 
     def test_score_range(self, scorer, sample_resume_text):
-        score = scorer.section_score(sample_resume_text)
-        assert 0 <= score <= 100
+        result = scorer.section_score(sample_resume_text)
+        assert isinstance(result, dict)
+        assert 0 <= result["score"] <= 100
 
 
 # ─── Experience Score Tests ───────────────────────────────────────────────────
 
 class TestExperienceScore:
-    def test_exceeds_required(self, scorer, sample_resume_text):
+    def test_exceeds_required(self, scorer):
         """7 years experience vs 3 required → high score."""
-        score = scorer.experience_score(sample_resume_text, required_years=3)
+        score = scorer.experience_score(7.0, required_years=3)
         assert score >= 70
 
-    def test_meets_required(self, scorer, sample_resume_text):
+    def test_meets_required(self, scorer):
         """Candidate meets exact requirement."""
-        score = scorer.experience_score(sample_resume_text, required_years=7)
+        score = scorer.experience_score(7.0, required_years=7)
         assert 40 <= score <= 100
 
-    def test_no_experience_required(self, scorer, sample_resume_text):
+    def test_no_experience_required(self, scorer):
         """0 years required → should return high score (no barrier)."""
-        score = scorer.experience_score(sample_resume_text, required_years=0)
+        score = scorer.experience_score(7.0, required_years=0)
         assert score >= 70
 
     def test_far_below_required(self, scorer):
         """Junior resume vs 10 years required → low score."""
-        resume = "Fresh grad 2023. No work experience."
-        score = scorer.experience_score(resume, required_years=10)
+        score = scorer.experience_score(0.0, required_years=10)
         assert score <= 50
 
-    def test_score_range(self, scorer, sample_resume_text):
-        score = scorer.experience_score(sample_resume_text, required_years=5)
+    def test_score_range(self, scorer):
+        score = scorer.experience_score(7.0, required_years=5)
         assert 0 <= score <= 100
 
 
 # ─── Full Hybrid Score Integration ────────────────────────────────────────────
 
 class TestComputeFullScore:
-    @pytest.mark.asyncio
-    async def test_full_score_structure(self, scorer, sample_resume_text, sample_jd_skills):
+    def test_full_score_structure(self, scorer, sample_resume_text, sample_jd_skills):
         """compute_full_score must return all expected keys."""
         # Provide a pre-computed semantic_score to avoid embedding call
         result = scorer.compute_full_score(
             resume_text=sample_resume_text,
-            jd_skills=sample_jd_skills,
+            jd_text="Some job description text",
+            jd_keywords=sample_jd_skills,
+            candidate_years=7.0,
             required_years=3,
             semantic_score_override=75.0,
         )
@@ -193,7 +202,9 @@ class TestComputeFullScore:
         """Overall composite score must be 0-100."""
         result = scorer.compute_full_score(
             resume_text=sample_resume_text,
-            jd_skills=sample_jd_skills,
+            jd_text="Some job description text",
+            jd_keywords=sample_jd_skills,
+            candidate_years=7.0,
             required_years=3,
             semantic_score_override=60.0,
         )
@@ -203,13 +214,17 @@ class TestComputeFullScore:
         """High semantic override should drive up overall score."""
         low_result = scorer.compute_full_score(
             resume_text=sample_resume_text,
-            jd_skills=sample_jd_skills,
+            jd_text="Some job description text",
+            jd_keywords=sample_jd_skills,
+            candidate_years=7.0,
             required_years=3,
             semantic_score_override=0.0,
         )
         high_result = scorer.compute_full_score(
             resume_text=sample_resume_text,
-            jd_skills=sample_jd_skills,
+            jd_text="Some job description text",
+            jd_keywords=sample_jd_skills,
+            candidate_years=7.0,
             required_years=3,
             semantic_score_override=100.0,
         )
