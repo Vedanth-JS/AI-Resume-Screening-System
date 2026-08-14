@@ -146,6 +146,8 @@ services:
   db:
     image: ankane/pgvector:v0.5.1
     restart: always
+    ports:
+      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     environment:
@@ -175,6 +177,8 @@ services:
   redis:
     image: redis:7-alpine
     restart: always
+    ports:
+      - "6379:6379"
     command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --save 60 1
     volumes:
       - redis_data:/data

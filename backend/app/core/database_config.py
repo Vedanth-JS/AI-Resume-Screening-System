@@ -27,6 +27,8 @@ STATEMENT_TIMEOUT_MS = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "30000"))
 IDLE_IN_TRANSACTION_TIMEOUT_MS = int(os.getenv("DB_IDLE_IN_TRANSACTION_TIMEOUT_MS", "60000"))
 
 
+import socket
+
 def get_database_url() -> str:
     """Build the database URL from settings or env vars."""
     url = os.getenv("DATABASE_URL", settings.DATABASE_URL)
@@ -36,6 +38,13 @@ def get_database_url() -> str:
         url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
     if "postgres://" in url and "+asyncpg" not in url:
         url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+
+    # Fallback for local execution outside docker
+    if "@db:" in url:
+        try:
+            socket.gethostbyname("db")
+        except socket.gaierror:
+            url = url.replace("@db:", "@localhost:")
 
     return url
 

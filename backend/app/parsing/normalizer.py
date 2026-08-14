@@ -99,11 +99,16 @@ class Normalizer:
             return detect(text[:2000])
         except Exception:
             pass
-        if re.search(r"[\u4e00-\u9fff]", text): return "zh"
-        if re.search(r"[\u3040-\u309f\u30a0-\u30ff]", text): return "ja"
-        if re.search(r"[\uac00-\ud7af]", text): return "ko"
-        if re.search(r"[\u0600-\u06ff]", text): return "ar"
-        if re.search(r"[\u0400-\u04ff]", text): return "ru"
+        if re.search(r"[\u4e00-\u9fff]", text):
+            return "zh"
+        if re.search(r"[\u3040-\u309f\u30a0-\u30ff]", text):
+            return "ja"
+        if re.search(r"[\uac00-\ud7af]", text):
+            return "ko"
+        if re.search(r"[\u0600-\u06ff]", text):
+            return "ar"
+        if re.search(r"[\u0400-\u04ff]", text):
+            return "ru"
         return "en"
 
     @staticmethod

@@ -1,13 +1,14 @@
 import asyncio
 from sqlalchemy import select, delete
+from sqlalchemy.orm import selectinload
 from app.db.database import AsyncSessionLocal, async_engine, Base
 from app.models.models import Organization, Role, User, RoleEnum
-from app.api.auth import hash_password
+from app.services.auth_service import _hash_password
 
 async def reseed_admin():
     async with AsyncSessionLocal() as db:
         try:
-            print("👤 Resetting Admin User...")
+            print("Resetting Admin User...")
             
             # 1. Get or Create Org
             stmt = select(Organization).where(Organization.slug == "default-org")
@@ -27,26 +28,33 @@ async def reseed_admin():
                 db.add(admin_role)
                 await db.flush()
 
-            # 3. Force Re-create Admin
-            stmt = delete(User).where(User.email == "admin@ai-ats.com")
-            await db.execute(stmt)
-            
+            # 3. Force Re-create/Update Admin
             admin_email = "admin@ai-ats.com"
             admin_pass = "admin123"
-            
-            admin = User(
-                email=admin_email,
-                password_hash=hash_password(admin_pass),
-                org_id=org.id
-            )
-            admin.roles.append(admin_role)
-            db.add(admin)
+
+            stmt = select(User).where(User.email == admin_email).options(selectinload(User.roles))
+            res = await db.execute(stmt)
+            admin = res.scalars().first()
+
+            if admin:
+                admin.password_hash = await _hash_password(admin_pass)
+                admin.org_id = org.id
+                if admin_role not in admin.roles:
+                    admin.roles.append(admin_role)
+            else:
+                admin = User(
+                    email=admin_email,
+                    password_hash=await _hash_password(admin_pass),
+                    org_id=org.id
+                )
+                admin.roles.append(admin_role)
+                db.add(admin)
             
             await db.commit()
-            print(f"✅ Admin user '{admin_email}' reset with password '{admin_pass}'")
+            print(f"Admin user '{admin_email}' reset with password '{admin_pass}'")
 
         except Exception as e:
-            print(f"❌ Error: {e}")
+            print(f"Error: {e}")
             await db.rollback()
         finally:
             await db.close()

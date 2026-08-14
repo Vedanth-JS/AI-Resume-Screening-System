@@ -14,7 +14,7 @@ RecruiterOnly = get_current_user_with_role(RoleEnum.RECRUITER)
 
 @router.get("/export")
 async def export_audit_log(
-    format: str = Query("csv", regex="^(csv)$"),
+    format: str = Query("csv", pattern="^(csv)$"),
     from_date: datetime = Query(None),
     to_date: datetime = Query(None),
     db: AsyncSession = Depends(get_db),
