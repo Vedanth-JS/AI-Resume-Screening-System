@@ -1,13 +1,59 @@
 """
 LLM Service — all Gemini API calls.
 Uses google-generativeai with structured prompts and robust JSON parsing.
+
+Retry strategy (tenacity):
+  - max 4 attempts
+  - exponential backoff: 1s → 2s → 4s → 8s (capped at 60s)
+  - retries on: network errors, 429 rate limits, 500 server errors
 """
 import json
 import re
+import time
 import google.generativeai as genai
 from typing import Dict, Any, List, Optional
 from ..core.config import settings
 from ..core.logger import log
+
+# ─── Tenacity retry setup ──────────────────────────────────────────────────────
+try:
+    from tenacity import (
+        retry,
+        stop_after_attempt,
+        wait_exponential,
+        retry_if_exception,
+        RetryError,
+    )
+    _TENACITY_AVAILABLE = True
+except ImportError:
+    _TENACITY_AVAILABLE = False
+    log.warning("tenacity_not_installed", note="Install tenacity for LLM retry support.")
+
+def _is_retryable(exc: Exception) -> bool:
+    """Return True if the exception is a transient LLM error worth retrying."""
+    msg = str(exc).lower()
+    return any(kw in msg for kw in [
+        "429", "rate limit", "quota", "resource exhausted",
+        "503", "502", "500", "internal server error",
+        "connection", "timeout", "deadline", "transport",
+    ])
+
+
+def _make_retry_decorator():
+    """Build a tenacity retry decorator if available; else return identity."""
+    if not _TENACITY_AVAILABLE:
+        def noop(fn):
+            return fn
+        return noop
+    return retry(
+        stop=stop_after_attempt(4),
+        wait=wait_exponential(multiplier=1, min=1, max=60),
+        retry=retry_if_exception(_is_retryable),
+        reraise=True,
+    )
+
+
+_llm_retry = _make_retry_decorator()
 
 # ─── Gemini setup ─────────────────────────────────────────────────────────────
 if settings.GOOGLE_API_KEY:
@@ -19,22 +65,36 @@ else:
     _embedding_model = None
     log.warning("gemini_not_configured", note="Set GOOGLE_API_KEY for AI features.")
 
+
+@_llm_retry
+def _embed_with_retry(text: str, task_type: str = "retrieval_document") -> List[float]:
+    """
+    Synchronous Gemini embedding call wrapped in tenacity retry.
+    Separated so tenacity can intercept and retry without async complexity.
+    """
+    result = genai.embed_content(
+        model=_embedding_model,
+        content=text,
+        task_type=task_type,
+        title="Resume Content",
+    )
+    return result["embedding"]
+
+
 async def get_embedding(text: str) -> List[float]:
-    """Generate 768-dim vector using Gemini's text-embedding-004."""
+    """Generate 768-dim vector using Gemini's text-embedding-004 with retry."""
     if not _embedding_model or not text:
         return []
+    import asyncio
     try:
-        result = genai.embed_content(
-            model=_embedding_model,
-            content=text,
-            task_type="retrieval_document",
-            title="Resume Content"
-        )
-        return result['embedding']
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, _embed_with_retry, text)
     except Exception as e:
         log.error("gemini_embedding_error", error=str(e))
         return []
 
+
+# ─── JSON parsing ──────────────────────────────────────────────────────────────
 
 def _parse_json_response(text: str) -> Optional[Dict]:
     """Robustly extract JSON from a Gemini response (may be wrapped in ```json blocks)."""
@@ -79,21 +139,31 @@ def _generate_xai_fallback(
         },
         "key_strengths": [f"Matched skill: {s}" for s in matched[:3]],
         "key_gaps":       missing[:3],
+        "red_flags":      [],
         "hiring_recommendation": f"{verdict} — {candidate_name} scored {b.get('overall_score', 0):.1f}% overall.",
         "source": "rule_based",
     }
 
 
+# ─── Core model caller with retry ────────────────────────────────────────────
+
+@_llm_retry
+def _call_model_sync(prompt: str) -> str:
+    """Synchronous Gemini call wrapped in tenacity retry decorator."""
+    if not _model:
+        return ""
+    resp = _model.generate_content(prompt)
+    return resp.text or ""
+
 
 async def _call_model(prompt: str, context: str = "") -> str:
-    """Async Gemini call with error handling — uses run_in_executor."""
+    """Async Gemini call with tenacity retry — uses run_in_executor."""
     if not _model:
         return ""
     import asyncio
     try:
         loop = asyncio.get_running_loop()
-        resp = await loop.run_in_executor(None, _model.generate_content, prompt)
-        return resp.text or ""
+        return await loop.run_in_executor(None, _call_model_sync, prompt)
     except Exception as e:
         log.error("gemini_call_error", context=context, error=str(e))
         return ""
@@ -164,7 +234,7 @@ You are a Job Description analyst. Analyze the JD below and return ONLY a JSON o
   "required_experience_years": 0,
   "required_education": "string",
   "key_responsibilities": ["list"],
-  "culture_signals": ["collaborative", "fast-paced", etc.],
+  "culture_signals": ["collaborative", "fast-paced"],
   "compensation_signals": "remote | hybrid | onsite | not_specified"
 }}
 
@@ -204,7 +274,6 @@ Return ONLY a JSON array of 5 objects:
 ]
 """
         raw = await _call_model(prompt, context="generate_interview_questions")
-        # Try to parse a JSON array
         raw_clean = re.sub(r"```json\s*|```\s*", "", raw or "").strip()
         try:
             result = json.loads(raw_clean)
@@ -231,12 +300,12 @@ Return ONLY a JSON object:
   "age_bias": {{
     "detected": true/false,
     "confidence": 0.0-1.0,
-    "signals": ["digital native", "fresh graduate", "seasoned", etc.]
+    "signals": ["digital native", "fresh graduate", "seasoned"]
   }},
   "prestige_bias": {{
     "detected": true/false,
     "confidence": 0.0-1.0,
-    "signals": ["top university", "ivy league", etc.]
+    "signals": ["top university", "ivy league"]
   }},
   "overall_bias_score": 0.0-1.0,
   "recommendations": ["actionable suggestion 1", "suggestion 2"]
@@ -329,6 +398,7 @@ Return ONLY a JSON object:
   }},
   "key_strengths": ["strength 1", "strength 2", "strength 3"],
   "key_gaps": ["gap 1", "gap 2"],
+  "red_flags": ["any concerns about the resume or candidate"],
   "hiring_recommendation": "2-3 sentence actionable recommendation for the recruiter",
   "source": "llm"
 }}

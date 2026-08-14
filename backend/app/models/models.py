@@ -161,20 +161,28 @@ class ScreeningResult(Base, TimestampMixin):
     application_id: Mapped[int] = mapped_column(ForeignKey("applications.id"), index=True)
     job_id: Mapped[int] = mapped_column(ForeignKey("job_postings.id"), index=True)
     llm_model: Mapped[str] = mapped_column(String(50), default="gemini-1.5-flash")
-    prompt_version: Mapped[str] = mapped_column(String(20), default="1.0")
-    
-    # Granular Scoring (Total 100)
-    score: Mapped[float] = mapped_column(index=True) # Total score
-    keyword_score: Mapped[float] = mapped_column(default=0.0)
-    skills_score: Mapped[float] = mapped_column(default=0.0)
+    prompt_version: Mapped[str] = mapped_column(String(20), default="3.0")
+
+    # ─── Composite & Component Scores (0-100 each) ────────────────────────────
+    score: Mapped[float] = mapped_column(index=True)          # Weighted composite
+    keyword_score: Mapped[float] = mapped_column(default=0.0)  # Taxonomy + fuzzy match
+    semantic_score: Mapped[Optional[float]] = mapped_column(nullable=True)  # Embedding cosine sim
+    skills_score: Mapped[float] = mapped_column(default=0.0)   # Alias: keyword_score
     experience_score: Mapped[float] = mapped_column(default=0.0)
     education_score: Mapped[float] = mapped_column(default=0.0)
-    format_score: Mapped[float] = mapped_column(default=0.0)
+    format_score: Mapped[float] = mapped_column(default=0.0)   # Resume format quality
+    section_score: Mapped[Optional[float]] = mapped_column(nullable=True)  # Section completeness
     certs_score: Mapped[float] = mapped_column(default=0.0)
-    
-    reasoning: Mapped[str] = mapped_column(Text)
+
+    # ─── Structured AI Output ────────────────────────────────────────────────
+    matched_skills: Mapped[Optional[dict]] = mapped_column(SafeJSONB, nullable=True)  # List[str]
+    missing_skills: Mapped[Optional[dict]] = mapped_column(SafeJSONB, nullable=True)  # List[str]
+    red_flags: Mapped[Optional[dict]] = mapped_column(SafeJSONB, nullable=True)       # List[str]
+    xai_json: Mapped[Optional[dict]] = mapped_column(SafeJSONB, nullable=True)        # Full XAI object
+
+    reasoning: Mapped[str] = mapped_column(Text, default="")
     bias_flags: Mapped[dict] = mapped_column(SafeJSONB, default=dict)
-    
+
     application: Mapped["Application"] = relationship(back_populates="screening_results")
     job: Mapped["JobPosting"] = relationship(back_populates="results")
 
