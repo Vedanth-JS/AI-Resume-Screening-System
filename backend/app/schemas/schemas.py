@@ -278,3 +278,53 @@ class MetricsResponse(BaseModel):
     accept: int = Field(description="Applications with score >= 70")
     review: int = Field(description="Applications with score 40-70")
     reject: int = Field(description="Applications with score < 40")
+
+
+# ─── Interview Scheduling ─────────────────────────────────────────────────────
+
+class InterviewScheduleRequest(BaseModel):
+    """Payload for PATCH /api/v1/interviews/{kit_id}/schedule"""
+    scheduled_at: datetime = Field(..., description="ISO datetime for the interview")
+    location: Optional[str] = Field(None, max_length=255, description="Physical location or 'Online'")
+    meeting_link: Optional[str] = Field(None, max_length=500, description="Video call URL")
+
+
+class InterviewKitResponse(BaseModel):
+    """Full interview kit with scheduling info."""
+    id: int
+    job_id: int
+    job_title: Optional[str] = None
+    candidate_id: int
+    candidate_name: Optional[str] = None
+    application_id: Optional[int] = None
+    focus_areas: Optional[List[str]] = None
+    difficulty: Optional[str] = None
+    questions: Optional[List[Dict[str, Any]]] = None
+    scheduled_at: Optional[datetime] = None
+    location: Optional[str] = None
+    meeting_link: Optional[str] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ─── Application Status ───────────────────────────────────────────────────────
+
+class ApplicationStatusUpdate(BaseModel):
+    """Payload for PUT /api/applications/{app_id}/status"""
+    status: str = Field(..., description="APPLIED | SCREENING | INTERVIEW | OFFER | REJECTED")
+
+
+# ─── Saved Search Presets ─────────────────────────────────────────────────────
+
+class SavedSearchCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100, description="Friendly preset name")
+    filters: Dict[str, Any] = Field(default_factory=dict, description="Filter state object")
+
+
+class SavedSearchResponse(BaseModel):
+    id: int
+    name: str
+    filters: Dict[str, Any]
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)

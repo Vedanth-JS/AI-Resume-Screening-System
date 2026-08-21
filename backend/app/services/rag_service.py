@@ -31,14 +31,15 @@ class RAGService:
             text("SELECT id FROM resume_embeddings WHERE candidate_id = :cid"),
             {"cid": candidate.id},
         )
+        vector_str = str(vector)
         if existing.scalar():
             await self.db.execute(
                 text(
-                    "UPDATE resume_embeddings SET embedding = :vec, model_version = :mv "
+                    "UPDATE resume_embeddings SET embedding = :vec, model_version = :mv, updated_at = CURRENT_TIMESTAMP "
                     "WHERE candidate_id = :cid"
                 ),
                 {
-                    "vec": vector,
+                    "vec": vector_str,
                     "mv": "gemini-embedding-2",
                     "cid": candidate.id,
                 },
@@ -46,12 +47,12 @@ class RAGService:
         else:
             await self.db.execute(
                 text(
-                    "INSERT INTO resume_embeddings (candidate_id, embedding, model_version) "
-                    "VALUES (:cid, :vec, :mv)"
+                    "INSERT INTO resume_embeddings (candidate_id, embedding, model_version, created_at, updated_at) "
+                    "VALUES (:cid, :vec, :mv, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
                 ),
                 {
                     "cid": candidate.id,
-                    "vec": vector,
+                    "vec": vector_str,
                     "mv": "gemini-embedding-2",
                 },
             )
@@ -78,7 +79,7 @@ class RAGService:
         try:
             result = await self.db.execute(
                 sql,
-                {"vector": query_vector, "org_id": org_id, "limit": limit},
+                {"vector": str(query_vector), "org_id": org_id, "limit": limit},
             )
             return [dict(row._mapping) for row in result]
         except Exception as e:

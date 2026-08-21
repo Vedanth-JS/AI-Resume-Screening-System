@@ -245,7 +245,12 @@ class InterviewKit(Base, TimestampMixin):
     focus_areas: Mapped[dict] = mapped_column(JSON) # List[str]
     difficulty: Mapped[str] = mapped_column(String(20)) # JUNIOR|MID|SENIOR
     questions: Mapped[dict] = mapped_column(JSON) # List[QuestionDict]
-    
+
+    # ─── Scheduling Fields ────────────────────────────────────────────────────
+    scheduled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    location: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    meeting_link: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
     scorecards: Mapped[List["InterviewScorecard"]] = relationship(back_populates="kit")
 
 class InterviewScorecard(Base, TimestampMixin):
@@ -286,3 +291,16 @@ class TaskRecord(Base, TimestampMixin):
     completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     org: Mapped["Organization"] = relationship()
+
+
+class SavedSearch(Base, TimestampMixin):
+    """Saved candidate filter preset per user."""
+    __tablename__ = "saved_searches"
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    org_id: Mapped[int] = mapped_column(ForeignKey("organizations.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(100))  # e.g. "Senior React devs > 70"
+    filters: Mapped[dict] = mapped_column(SafeJSONB, default=dict)  # {min_score, max_score, status, job_id, sort_by}
+
+    org: Mapped["Organization"] = relationship()
+    user: Mapped["User"] = relationship()

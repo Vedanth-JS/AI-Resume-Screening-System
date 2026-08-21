@@ -25,6 +25,7 @@ from ...db.database import AsyncSessionLocal
 from ...models import models
 from ...core.pipeline import ATSWorkflow
 from ...core.logger import log
+from ...core.config import settings
 import redis
 
 logger = get_task_logger(__name__)
@@ -109,24 +110,40 @@ def screen_resume(self, application_id: int):
                 update_task_progress(task_id, "FAILED", 100, error="Candidate not found")
                 return {"status": "error", "message": "Candidate not found"}
 
-            update_task_progress(task_id, "PROCESSING", 15, "Checking cache")
+            # Save state variables locally
+            org_id = app.org_id
+            job_id = job.id
+            candidate_id = candidate.id
+            candidate_name = candidate.name
+            candidate_email = candidate.email
+            candidate_phone = candidate.phone
+            candidate_raw_text = candidate.raw_text
+            candidate_parsed_json = candidate.parsed_json
 
             # ── 2. Retrieve PDF bytes from Redis ──────────────────────────────
             pdf_bytes = _fetch_pdf_bytes(task_id)
             # Fallback: re-encode raw_text if PDF bytes expired
             if pdf_bytes is None:
                 logger.warning(f"PDF bytes not found in Redis for task {task_id}, using raw_text fallback")
-                pdf_bytes = candidate.raw_text.encode("utf-8") if candidate.raw_text else b""
-                filename = f"{candidate.name or 'resume'}.txt"
+                pdf_bytes = candidate_raw_text.encode("utf-8") if candidate_raw_text else b""
+                filename = f"{candidate_name or 'resume'}.txt"
             else:
-                filename = candidate.parsed_json.get("filename", f"{candidate.name or 'resume'}.pdf")
+                filename = candidate_parsed_json.get("filename", f"{candidate_name or 'resume'}.pdf")
 
             # ── 3. Cache check (JD-resume pair deduplication) ─────────────────
             jd_text = job.description or ""
-            resume_preview = (candidate.raw_text or "")[:1000]
+            resume_preview = (candidate_raw_text or "")[:1000]
             cache_raw = f"{jd_text[:500]}||{resume_preview}"
             cache_hash = hashlib.sha256(cache_raw.encode()).hexdigest()[:24]
             cache_key = f"scoring_result:{cache_hash}"
+
+            req_skills = job.required_skills
+            min_experience = job.min_experience or 0
+
+            # Close the DB session during the slow external AI call
+            await db.close()
+
+            update_task_progress(task_id, "PROCESSING", 15, "Checking cache")
 
             cached = r.get(cache_key)
             if cached:
@@ -137,7 +154,6 @@ def screen_resume(self, application_id: int):
                 update_task_progress(task_id, "PROCESSING", 30, "Parsing resume")
 
                 # ── 4. Run full ATSWorkflow ──────────────────────────────────
-                req_skills = job.required_skills
                 if isinstance(req_skills, dict):
                     req_skills = list(req_skills.keys())
                 elif not isinstance(req_skills, list):
@@ -149,8 +165,8 @@ def screen_resume(self, application_id: int):
                     filename=filename,
                     jd_text=jd_text,
                     req_skills=req_skills,
-                    min_exp=job.min_experience or 0,
-                    org_id=app.org_id,
+                    min_exp=min_experience,
+                    org_id=org_id,
                 )
                 update_task_progress(task_id, "PROCESSING", 80, "Saving results")
 
@@ -162,55 +178,62 @@ def screen_resume(self, application_id: int):
             xai = breakdown.get("xai") or {}
             kw_detail = breakdown.get("keyword_detail") or {}
 
-            # Update candidate parsed_json if pipeline re-parsed it
-            if result.get("candidate") and result["candidate"].get("name"):
-                parsed = result["candidate"]
-                candidate.name = parsed.get("name") or candidate.name
-                candidate.email = parsed.get("email") or candidate.email
-                candidate.phone = parsed.get("phone") or candidate.phone
-                candidate.raw_text = parsed.get("raw_text") or candidate.raw_text
-                candidate.parsed_json = parsed
+            async with AsyncSessionLocal() as fresh_db:
+                # Re-fetch candidate and application from fresh db session
+                stmt = select(models.Application).where(models.Application.id == application_id)
+                app = (await fresh_db.execute(stmt)).scalars().first()
+                stmt = select(models.Candidate).where(models.Candidate.id == candidate_id)
+                candidate = (await fresh_db.execute(stmt)).scalars().first()
 
-            screening = models.ScreeningResult(
-                application_id=app.id,
-                job_id=job.id,
-                llm_model="gemini-1.5-flash",
-                prompt_version="3.0",
-                score=result.get("score") or 0.0,
-                keyword_score=breakdown.get("keyword_score") or 0.0,
-                semantic_score=breakdown.get("semantic_score"),
-                skills_score=breakdown.get("keyword_score") or 0.0,
-                experience_score=breakdown.get("experience_score") or 0.0,
-                education_score=80.0,   # default — not separately computed
-                format_score=breakdown.get("format_score") or 0.0,
-                section_score=breakdown.get("section_score"),
-                certs_score=5.0,
-                matched_skills=kw_detail.get("matched", []),
-                missing_skills=kw_detail.get("missing", []),
-                red_flags=xai.get("red_flags", []),
-                xai_json=xai,
-                reasoning=xai.get("hiring_recommendation") or result.get("explanation") or "",
-                bias_flags=result.get("bias") or {},
-            )
-            db.add(screening)
+                # Update candidate parsed_json if pipeline re-parsed it
+                if result.get("candidate") and result["candidate"].get("name"):
+                    parsed = result["candidate"]
+                    candidate.name = parsed.get("name") or candidate.name
+                    candidate.email = parsed.get("email") or candidate.email
+                    candidate.phone = parsed.get("phone") or candidate.phone
+                    candidate.raw_text = parsed.get("raw_text") or candidate.raw_text
+                    candidate.parsed_json = parsed
 
-            # Update Application score and status
-            app.score = result.get("score") or 0.0
-            app.status = "SCREENED"
+                screening = models.ScreeningResult(
+                    application_id=app.id,
+                    job_id=job_id,
+                    llm_model=settings.LLM_MODEL,
+                    prompt_version="3.0",
+                    score=result.get("score") or 0.0,
+                    keyword_score=breakdown.get("keyword_score") or 0.0,
+                    semantic_score=breakdown.get("semantic_score"),
+                    skills_score=breakdown.get("keyword_score") or 0.0,
+                    experience_score=breakdown.get("experience_score") or 0.0,
+                    education_score=80.0,   # default — not separately computed
+                    format_score=breakdown.get("format_score") or 0.0,
+                    section_score=breakdown.get("section_score"),
+                    certs_score=5.0,
+                    matched_skills=kw_detail.get("matched", []),
+                    missing_skills=kw_detail.get("missing", []),
+                    red_flags=xai.get("red_flags", []),
+                    xai_json=xai,
+                    reasoning=xai.get("hiring_recommendation") or result.get("explanation") or "",
+                    bias_flags=result.get("bias") or {},
+                )
+                fresh_db.add(screening)
 
-            await db.commit()
+                # Update Application score and status
+                app.score = result.get("score") or 0.0
+                app.status = "SCREENED"
 
-            update_task_progress(task_id, "SUCCESS", 100, "Screening complete")
-            logger.info(f"Screening complete: app={application_id} score={app.score:.1f}")
+                await fresh_db.commit()
 
-            return {
-                "status": "success",
-                "application_id": application_id,
-                "score": app.score,
-                "verdict": xai.get("verdict", "REVIEW"),
-                "matched_skills": kw_detail.get("matched", []),
-                "missing_skills": kw_detail.get("missing", []),
-            }
+                update_task_progress(task_id, "SUCCESS", 100, "Screening complete")
+                logger.info(f"Screening complete: app={application_id} score={app.score:.1f}")
+
+                return {
+                    "status": "success",
+                    "application_id": application_id,
+                    "score": app.score,
+                    "verdict": xai.get("verdict", "REVIEW"),
+                    "matched_skills": kw_detail.get("matched", []),
+                    "missing_skills": kw_detail.get("missing", []),
+                }
 
     try:
         return run_async(_run())

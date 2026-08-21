@@ -41,7 +41,7 @@ class SemanticSearch:
         """)
 
         params: Dict[str, Any] = {
-            "vector": query_vector,
+            "vector": str(query_vector),
             "org_id": org_id,
             "limit": limit,
         }

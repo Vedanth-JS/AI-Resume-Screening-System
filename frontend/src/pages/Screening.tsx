@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   RadialBarChart, 
   RadialBar, 
@@ -21,9 +21,16 @@ import {
   MoreVertical,
   Mail,
   UserCheck,
-  UserPlus
+  UserPlus,
+  Filter,
+  Bookmark,
+  BookmarkCheck,
+  Trash2,
+  ChevronDown,
+  X
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { savedSearchService } from '../services/api';
 
 const mockCandidates = [
   { id: 1, name: 'Arjun Sharma', score: 88, status: 'Shortlisted', role: 'Senior React Developer' },
@@ -43,16 +50,163 @@ export default function ScreeningPage() {
   const [selectedId, setSelectedId] = useState(1);
   const selected = mockCandidates.find(c => c.id === selectedId) || mockCandidates[0];
 
+  // ─── Saved Searches state ─────────────────────────────────────────────────────
+  const [savedSearches, setSavedSearches] = useState<any[]>([]);
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showPresetsPanel, setShowPresetsPanel] = useState(false);
+  const [presetName, setPresetName] = useState('');
+  const [activeFilters, setActiveFilters] = useState({
+    min_score: null as number | null,
+    max_score: null as number | null,
+    status: null as string | null,
+    sort_by: 'score',
+    sort_order: 'desc',
+  });
+  const [filterLabel, setFilterLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    savedSearchService.list()
+      .then(res => setSavedSearches(res.data))
+      .catch(() => {});
+  }, []);
+
+  const handleSaveSearch = async () => {
+    if (!presetName.trim()) return;
+    try {
+      const res = await savedSearchService.create(presetName.trim(), activeFilters);
+      setSavedSearches(prev => [res.data, ...prev]);
+      setPresetName('');
+      setShowSaveModal(false);
+    } catch (e) {
+      // silent
+    }
+  };
+
+  const handleLoadSearch = (search: any) => {
+    setActiveFilters(search.filters);
+    setFilterLabel(search.name);
+    setShowPresetsPanel(false);
+  };
+
+  const handleDeleteSearch = async (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await savedSearchService.delete(id);
+      setSavedSearches(prev => prev.filter(s => s.id !== id));
+    } catch {}
+  };
+
   return (
     <div className="flex h-[calc(100vh-12rem)] gap-6 overflow-hidden">
       {/* Candidate List (Left) */}
-      <div className="w-1/3 bg-card border rounded-2xl flex flex-col overflow-hidden shadow-sm">
-        <div className="p-6 border-b flex items-center justify-between">
-          <h2 className="font-display font-bold text-lg">Candidates</h2>
-          <div className="relative">
-            <Filter className="w-4 h-4 text-muted-foreground cursor-pointer hover:text-foreground transition-all" />
+      <div className="w-1/3 bg-card border rounded-2xl flex flex-col overflow-hidden shadow-sm relative">
+        <div className="p-4 border-b space-y-2">
+          <div className="flex items-center justify-between">
+            <h2 className="font-display font-bold text-lg">Candidates</h2>
+            <div className="flex items-center gap-1.5">
+              {/* Presets dropdown button */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowPresetsPanel(!showPresetsPanel)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border border-transparent hover:border-border"
+                  title="Saved filter presets"
+                >
+                  <BookmarkCheck className="w-3.5 h-3.5" />
+                  {savedSearches.length > 0 && (
+                    <span className="bg-violet-500/20 text-violet-300 text-[10px] px-1.5 py-0.5 rounded-full font-bold">
+                      {savedSearches.length}
+                    </span>
+                  )}
+                </button>
+                {/* Presets panel dropdown */}
+                {showPresetsPanel && (
+                  <div className="absolute right-0 top-full mt-1 w-64 bg-popover border border-border rounded-xl shadow-2xl z-50 overflow-hidden">
+                    <div className="p-3 border-b flex items-center justify-between">
+                      <span className="text-xs font-bold text-foreground">Saved Presets</span>
+                      <button onClick={() => setShowPresetsPanel(false)} className="text-muted-foreground hover:text-foreground">
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    {savedSearches.length === 0 ? (
+                      <p className="text-xs text-muted-foreground text-center py-6">No saved presets yet</p>
+                    ) : (
+                      <div className="max-h-48 overflow-y-auto divide-y divide-border">
+                        {savedSearches.map((s: any) => (
+                          <div
+                            key={s.id}
+                            onClick={() => handleLoadSearch(s)}
+                            className="flex items-center justify-between px-3 py-2.5 hover:bg-accent cursor-pointer group"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-foreground truncate">{s.name}</p>
+                              <p className="text-[10px] text-muted-foreground">{new Date(s.created_at).toLocaleDateString()}</p>
+                            </div>
+                            <button
+                              onClick={(e) => handleDeleteSearch(s.id, e)}
+                              className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive ml-2 shrink-0 transition-opacity"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              {/* Save current filter button */}
+              <button
+                onClick={() => setShowSaveModal(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-accent transition-colors border border-transparent hover:border-border"
+                title="Save current filters as preset"
+              >
+                <Bookmark className="w-3.5 h-3.5" />
+                Save
+              </button>
+            </div>
           </div>
+          {/* Active filter badge */}
+          {filterLabel && (
+            <div className="flex items-center gap-2 px-2.5 py-1.5 bg-violet-500/10 border border-violet-500/20 rounded-lg">
+              <Filter className="w-3 h-3 text-violet-400" />
+              <span className="text-xs text-violet-300 font-medium flex-1 truncate">{filterLabel}</span>
+              <button onClick={() => { setFilterLabel(null); setActiveFilters({ min_score: null, max_score: null, status: null, sort_by: 'score', sort_order: 'desc' }); }} className="text-violet-400 hover:text-violet-200">
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
         </div>
+
+        {/* Save modal */}
+        {showSaveModal && (
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm z-40 flex items-center justify-center p-6">
+            <div className="bg-card border border-border rounded-2xl p-5 w-full max-w-sm shadow-2xl space-y-4">
+              <h3 className="font-bold text-foreground text-sm flex items-center gap-2">
+                <Bookmark className="w-4 h-4 text-violet-400" />
+                Save Filter Preset
+              </h3>
+              <input
+                type="text"
+                placeholder="e.g. Senior React devs above 70"
+                value={presetName}
+                onChange={(e) => setPresetName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSaveSearch()}
+                className="w-full bg-background border border-border rounded-xl px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+              />
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setShowSaveModal(false)} className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground">Cancel</button>
+                <button
+                  onClick={handleSaveSearch}
+                  disabled={!presetName.trim()}
+                  className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white rounded-xl text-sm font-semibold transition-colors disabled:opacity-50"
+                >
+                  Save Preset
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto divide-y divide-border">
           {mockCandidates.map((c) => (
             <div 
@@ -204,6 +358,3 @@ export default function ScreeningPage() {
   );
 }
 
-function Filter({ className }: { className?: string }) {
-  return <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>;
-}

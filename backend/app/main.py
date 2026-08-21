@@ -149,7 +149,7 @@ async def me(current_user = Depends(get_current_user_hybrid)):
 
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
-from .api import routes, auth, status, notifications, analytics, audit, bulk, tasks, interviews, enterprise
+from .api import routes, auth, status, notifications, analytics, audit, bulk, tasks, interviews, enterprise, saved_searches
 from .core.websocket import manager
 
 app.include_router(auth.router,          prefix="/api",      tags=["Auth"])
@@ -162,6 +162,8 @@ app.include_router(bulk.router,          prefix="/api/v1",   tags=["Bulk & Batch
 app.include_router(tasks.router,         prefix="/api/v1/tasks", tags=["Tasks"])
 app.include_router(interviews.router,    prefix="/api/v1/interviews", tags=["Interviews"])
 app.include_router(enterprise.router,    prefix="",          tags=["Enterprise"])
+app.include_router(saved_searches.router, prefix="/api",     tags=["Saved Searches"])
+
 
 # ─── ATS v2 Routes ────────────────────────────────────────────────────────────
 from .api.ats import router as ats_router

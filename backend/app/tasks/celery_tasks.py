@@ -107,7 +107,7 @@ def screen_resume_task(self, org_id: int, job_id: int, filename: str, file_conte
             screening = models.ScreeningResult(
                 application_id=application.id,
                 job_id=job.id,
-                llm_model="gemini-1.5-flash",
+                llm_model=settings.LLM_MODEL,
                 prompt_version="2.1-prod-scoring",
                 score=ats_res["total_score"],
                 

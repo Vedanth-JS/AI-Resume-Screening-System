@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Briefcase, Users, BarChart3, Upload, MessageSquare, LogOut, Moon, Sun, ChevronLeft, ChevronRight } from "lucide-react";
+import { LayoutDashboard, Briefcase, Users, BarChart3, Upload, MessageSquare, LogOut, Moon, Sun, ChevronLeft, ChevronRight, KanbanSquare } from "lucide-react";
 
 interface SidebarProps {
   onLogout: () => void;
@@ -13,6 +13,7 @@ const navItems = [
   { to: "/dashboard", icon: LayoutDashboard, label: "Dashboard", end: true },
   { to: "/jobs", icon: Briefcase, label: "Jobs" },
   { to: "/candidates", icon: Users, label: "Candidates" },
+  { to: "/pipeline", icon: KanbanSquare, label: "Pipeline" },
   { to: "/analytics", icon: BarChart3, label: "Analytics" },
   { to: "/upload", icon: Upload, label: "Upload" },
   { to: "/chat", icon: MessageSquare, label: "AI Chat" },

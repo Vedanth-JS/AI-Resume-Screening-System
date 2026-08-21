@@ -24,6 +24,7 @@ from .models import (
     InterviewScorecard,
     BatchJob,
     TaskRecord,
+    SavedSearch,
 )
 
 from .ats_models import (
@@ -60,7 +61,7 @@ __all__ = [
     "Organization", "Role", "User", "JobPosting", "Candidate",
     "Application", "ScreeningResult", "ResumeEmbedding",
     "JobCandidateMatch", "AuditLog", "Notification",
-    "InterviewKit", "InterviewScorecard", "BatchJob", "TaskRecord",
+    "InterviewKit", "InterviewScorecard", "BatchJob", "TaskRecord", "SavedSearch",
     "PipelineStageEnum", "InterviewType", "OfferStatus", "CommunicationType",
     "Department", "department_members", "PipelineStage", "CandidateNote",
     "ActivityLog", "Interview", "OfferLetter", "EmailTemplate",

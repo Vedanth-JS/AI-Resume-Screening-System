@@ -162,6 +162,35 @@ export const comparisonService = {
     api.get(`/jobs/${jobId}/compare`, { params: { candidate_ids: candidateIds.join(',') } }),
 };
 
+// ─── ATS Stage transitions ───────────────────────────────────────────────────
+export const atsService = {
+  advanceStage: (applicationId, newStage, notes = '') => 
+    api.post('/v2/ats/pipeline/advance', { application_id: applicationId, new_stage: newStage, notes }),
+  rejectCandidate: (applicationId, reasonId = null, notes = '') => 
+    api.post('/v2/ats/reject', { application_id: applicationId, reason_id: reasonId, notes }),
+};
+
+// ─── Pipeline Kanban ─────────────────────────────────────────────────────────
+export const pipelineService = {
+  getStages: (jobId) => api.get('/pipeline', { params: jobId ? { job_id: jobId } : {} }),
+  updateStatus: (applicationId, status) =>
+    api.put(`/applications/${applicationId}/status`, { status }),
+};
+
+// ─── Interview Scheduling ─────────────────────────────────────────────────────
+export const scheduleService = {
+  schedule: (kitId, payload) => api.patch(`/v1/interviews/${kitId}/schedule`, payload),
+  getUpcoming: () => api.get('/v1/interviews/upcoming'),
+};
+
+// ─── Saved Searches ───────────────────────────────────────────────────────────
+export const savedSearchService = {
+  list: () => api.get('/saved-searches/'),
+  create: (name, filters) => api.post('/saved-searches/', { name, filters }),
+  delete: (id) => api.delete(`/saved-searches/${id}`),
+};
+
+
 export const extractErrorMessage = (err, defaultMessage = 'An unexpected error occurred') => {
   if (!err) return defaultMessage;
   

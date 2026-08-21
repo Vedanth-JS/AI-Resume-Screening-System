@@ -13,6 +13,7 @@ import Upload       from "./pages/Upload";
 import Comparison   from "./pages/Comparison";
 import Interview    from "./pages/Interview";
 import JDComparison from "./pages/JDComparison";
+import Pipeline     from "./pages/Pipeline";
 import Login        from "./components/Login";
 import Register     from "./components/Register";
 import RAGChat      from "./components/RAGChat";
@@ -70,6 +71,7 @@ export default function App() {
               <Route path="/jobs"           element={<Jobs />} />
               <Route path="/job/:id"        element={<JobDetail />} />
               <Route path="/candidates"     element={<Screening />} />
+              <Route path="/pipeline"       element={<Pipeline />} />
               <Route path="/analytics"      element={<Analytics />} />
               <Route path="/upload"         element={<Upload />} />
               <Route path="/chat"           element={<RAGChat />} />

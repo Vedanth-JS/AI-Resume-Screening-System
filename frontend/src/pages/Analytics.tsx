@@ -64,6 +64,30 @@ export default function AnalyticsPage() {
   const [volumeTrends, setVolumeTrends] = useState<any[]>([]);
   const [diversity, setDiversity] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const handleExportCSV = async () => {
+    setExportLoading(true);
+    setExportError(null);
+    try {
+      const res = await analyticsService.exportCSV();
+      const blob = res.data instanceof Blob ? res.data : new Blob([res.data], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `analytics_export_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setExportError(err?.response?.data?.detail || 'Export failed. Please try again.');
+      setTimeout(() => setExportError(null), 5000);
+    } finally {
+      setExportLoading(false);
+    }
+  };
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -123,11 +147,24 @@ export default function AnalyticsPage() {
             <option value={90}>Last 90 days</option>
             <option value={365}>Last year</option>
           </select>
-          <Button variant="outline" size="sm" leftIcon={<Download className="w-3.5 h-3.5" />} onClick={() => analyticsService.exportCSV()}>
-            Export CSV
+          <Button
+            variant="outline"
+            size="sm"
+            leftIcon={exportLoading ? undefined : <Download className="w-3.5 h-3.5" />}
+            onClick={handleExportCSV}
+            disabled={exportLoading}
+          >
+            {exportLoading ? 'Exporting…' : 'Export CSV'}
           </Button>
         </div>
       </div>
+
+      {/* Export Error Banner */}
+      {exportError && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs font-semibold">
+          <span>⚠️</span> {exportError}
+        </div>
+      )}
 
       {/* KPI Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger">

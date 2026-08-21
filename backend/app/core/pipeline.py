@@ -52,23 +52,23 @@ class ATSState(TypedDict):
 
 # ─── Node Functions ───────────────────────────────────────────────────────────
 
-async def node_parse_resume(state: ATSState) -> ATSState:
+async def node_parse_resume(state: ATSState) -> Dict[str, Any]:
     log.info("node_parse_resume.start", filename=state["filename"])
     try:
         text = ResumeParser.extract_text(state["file_content"], state["filename"])
         parsed = await LLMService.extract_resume_data(text)
         parsed["raw_text"] = text
-        state["parsed_resume"] = parsed
+        return {"parsed_resume": parsed}
     except Exception as e:
         log.error("node_parse_resume.error", error=str(e))
-        state["error"] = f"Parse error: {e}"
-    return state
+        return {"error": f"Parse error: {e}"}
 
 
-async def node_analyze_jd_and_embed(state: ATSState) -> ATSState:
+async def node_analyze_jd_and_embed(state: ATSState) -> Dict[str, Any]:
     """Analyse JD + generate embeddings for both resume and JD in parallel."""
     resume_text = state["parsed_resume"].get("raw_text", "")
     jd_text = state["jd_text"]
+    updates: Dict[str, Any] = {}
 
     try:
         jd_profile, resume_emb, jd_emb = await asyncio.gather(
@@ -78,18 +78,18 @@ async def node_analyze_jd_and_embed(state: ATSState) -> ATSState:
             return_exceptions=True,
         )
         if not isinstance(jd_profile, Exception):
-            state["jd_profile"] = jd_profile
+            updates["jd_profile"] = jd_profile
         if not isinstance(resume_emb, Exception):
-            state["resume_embedding"] = resume_emb
+            updates["resume_embedding"] = resume_emb
         if not isinstance(jd_emb, Exception):
-            state["jd_embedding"] = jd_emb
+            updates["jd_embedding"] = jd_emb
     except Exception as e:
         log.error("node_analyze_jd_and_embed.error", error=str(e))
 
-    return state
+    return updates
 
 
-async def node_score_all(state: ATSState) -> ATSState:
+async def node_score_all(state: ATSState) -> Dict[str, Any]:
     """Compute keyword, semantic, format, section, and experience scores."""
     try:
         resume_text = state["parsed_resume"].get("raw_text", "")
@@ -115,34 +115,35 @@ async def node_score_all(state: ATSState) -> ATSState:
             semantic_score_override=sem_override,
         )
 
-        state["ats_breakdown"] = res
-        state["final_score"] = res["overall_score"]
+        return {"ats_breakdown": res, "final_score": res["overall_score"]}
     except Exception as e:
         log.error("node_score_all.error", error=str(e))
-    return state
+        return {}
 
 
-async def node_detect_bias(state: ATSState) -> ATSState:
+async def node_detect_bias(state: ATSState) -> Dict[str, Any]:
     try:
-        state["bias_report"] = await LLMService.detect_bias_llm(state["jd_text"])
+        return {"bias_report": await LLMService.detect_bias_llm(state["jd_text"])}
     except Exception as e:
         log.error("node_detect_bias.error", error=str(e))
-    return state
+        return {}
 
 
-async def node_generate_iq(state: ATSState) -> ATSState:
+async def node_generate_iq(state: ATSState) -> Dict[str, Any]:
     try:
         gaps = state.get("ats_breakdown", {}).get("keyword_detail", {}).get("missing", [])
         name = state.get("parsed_resume", {}).get("name", "Candidate")
-        state["interview_qs"] = await LLMService.generate_interview_questions(
-            gaps, state["jd_text"], name
-        )
+        return {
+            "interview_qs": await LLMService.generate_interview_questions(
+                gaps, state["jd_text"], name
+            )
+        }
     except Exception as e:
         log.error("node_generate_iq.error", error=str(e))
-    return state
+        return {}
 
 
-async def node_scoring_xai(state: ATSState) -> ATSState:
+async def node_scoring_xai(state: ATSState) -> Dict[str, Any]:
     try:
         xai = await LLMService.generate_xai_reasoning(
             candidate_name=state.get("parsed_resume", {}).get("name", "Candidate"),
@@ -151,11 +152,15 @@ async def node_scoring_xai(state: ATSState) -> ATSState:
             resume_text=state.get("parsed_resume", {}).get("raw_text", ""),
             job_title=state.get("jd_profile", {}).get("role_title", ""),
         )
-        state["explanation"] = xai.get("hiring_recommendation", "")
-        state["ats_breakdown"]["xai"] = xai
+        breakdown = dict(state.get("ats_breakdown") or {})
+        breakdown["xai"] = xai
+        return {
+            "explanation": xai.get("hiring_recommendation", ""),
+            "ats_breakdown": breakdown,
+        }
     except Exception as e:
         log.error("node_scoring_xai.error", error=str(e))
-    return state
+        return {}
 
 
 # ─── Graph Builder ────────────────────────────────────────────────────────────
@@ -222,17 +227,17 @@ class ATSWorkflow:
             final = await _compiled_graph.ainvoke(initial_state)
         else:
             # Linear fallback — still uses optimised parallel embed step
-            s = initial_state
-            s = await node_parse_resume(s)
-            s = await node_analyze_jd_and_embed(s)
-            s = await node_score_all(s)
+            s = dict(initial_state)
+            s.update(await node_parse_resume(s))
+            s.update(await node_analyze_jd_and_embed(s))
+            s.update(await node_score_all(s))
             # Run bias, questions, xai concurrently
             bias_task    = node_detect_bias(s)
             q_task       = node_generate_iq(s)
             s_bias, s_q  = await asyncio.gather(bias_task, q_task)
-            s["bias_report"]  = s_bias.get("bias_report")
-            s["interview_qs"] = s_q.get("interview_qs")
-            s = await node_scoring_xai(s)
+            s.update(s_bias)
+            s.update(s_q)
+            s.update(await node_scoring_xai(s))
             final = s
 
         return {

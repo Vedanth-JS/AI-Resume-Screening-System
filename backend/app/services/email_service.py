@@ -199,3 +199,93 @@ class EmailService:
         except Exception as e:
             log.error("email_service.error", to=to_email, error=str(e))
             return False
+
+    @staticmethod
+    def send_interview_scheduled(
+        to_email: str,
+        candidate_name: str,
+        job_title: str,
+        scheduled_at,
+        location: Optional[str] = None,
+        meeting_link: Optional[str] = None,
+    ) -> bool:
+        """Send an interview schedule confirmation email."""
+        if not EmailService._is_configured():
+            log.info("email_service.disabled", note="EMAIL_ENABLED not set.")
+            return False
+
+        try:
+            date_str = (
+                scheduled_at.strftime("%A, %B %d, %Y at %I:%M %p UTC")
+                if scheduled_at else "TBD"
+            )
+            location_line = f"<p style='color:#94a3b8;margin:4px 0;'>📍 <strong>Location:</strong> {location}</p>" if location else ""
+            link_line = (
+                f"<p style='margin:4px 0;'><a href='{meeting_link}' style='color:#6366f1;'>🔗 Join Meeting</a></p>"
+                if meeting_link else ""
+            )
+
+            html = f"""
+            <!DOCTYPE html><html><head><meta charset="utf-8"></head>
+            <body style="font-family:-apple-system,sans-serif;background:#0a0a0b;margin:0;padding:40px 0;">
+              <div style="max-width:560px;margin:0 auto;background:#0f172a;border-radius:16px;overflow:hidden;border:1px solid #1e293b;">
+                <div style="background:linear-gradient(135deg,#6366f1,#8b5cf6);padding:32px;text-align:center;">
+                  <h1 style="color:#fff;margin:0;font-size:20px;font-weight:700;">Interview Scheduled</h1>
+                </div>
+                <div style="padding:32px;">
+                  <p style="color:#e2e8f0;margin:0 0 20px;">An interview has been confirmed:</p>
+                  <div style="background:#1e293b;border-radius:10px;padding:20px;border:1px solid #334155;">
+                    <p style="color:#fff;font-size:16px;font-weight:600;margin:0 0 10px;">👤 {candidate_name}</p>
+                    <p style="color:#94a3b8;margin:4px 0;">💼 <strong>Role:</strong> {job_title}</p>
+                    <p style="color:#94a3b8;margin:4px 0;">📅 <strong>When:</strong> {date_str}</p>
+                    {location_line}
+                    {link_line}
+                  </div>
+                  <p style="color:#475569;font-size:12px;margin-top:20px;">This is an automated message from AI Talent Cloud.</p>
+                </div>
+              </div>
+            </body></html>
+            """
+
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = f"Interview Scheduled: {candidate_name} — {job_title}"
+            msg["From"] = getattr(settings, "FROM_EMAIL", settings.SMTP_USER)
+            msg["To"] = to_email
+            msg.attach(MIMEText(html, "html"))
+
+            context = ssl.create_default_context()
+            port = int(getattr(settings, "SMTP_PORT", 587))
+            with smtplib.SMTP(settings.SMTP_HOST, port) as server:
+                server.ehlo()
+                server.starttls(context=context)
+                server.login(settings.SMTP_USER, settings.SMTP_PASS)
+                server.sendmail(msg["From"], to_email, msg.as_string())
+
+            log.info("email_service.interview_scheduled", to=to_email, candidate=candidate_name)
+            return True
+        except Exception as e:
+            log.error("email_service.interview_scheduled.error", to=to_email, error=str(e))
+            return False
+
+    @staticmethod
+    def send_email_raw(to_email: str, subject: str, html_body: str) -> bool:
+        """Generic low-level send for custom HTML emails."""
+        if not EmailService._is_configured():
+            return False
+        try:
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = getattr(settings, "FROM_EMAIL", settings.SMTP_USER)
+            msg["To"] = to_email
+            msg.attach(MIMEText(html_body, "html"))
+            context = ssl.create_default_context()
+            port = int(getattr(settings, "SMTP_PORT", 587))
+            with smtplib.SMTP(settings.SMTP_HOST, port) as server:
+                server.ehlo()
+                server.starttls(context=context)
+                server.login(settings.SMTP_USER, settings.SMTP_PASS)
+                server.sendmail(msg["From"], to_email, msg.as_string())
+            return True
+        except Exception as e:
+            log.error("email_service.raw.error", to=to_email, error=str(e))
+            return False

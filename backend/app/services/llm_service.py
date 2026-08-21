@@ -56,9 +56,20 @@ def _make_retry_decorator():
 _llm_retry = _make_retry_decorator()
 
 # ─── Gemini setup ─────────────────────────────────────────────────────────────
+FALLBACK_MODELS = [
+    settings.LLM_MODEL,
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3.1-flash-lite",
+    "gemini-flash-latest",
+]
+# Deduplicate list while preserving order
+FALLBACK_MODELS = list(dict.fromkeys(FALLBACK_MODELS))
+
 if settings.GOOGLE_API_KEY:
     genai.configure(api_key=settings.GOOGLE_API_KEY)
-    _model = genai.GenerativeModel("gemini-1.5-flash")
+    _model = genai.GenerativeModel(settings.LLM_MODEL)
     _embedding_model = "models/gemini-embedding-2"
 else:
     _model = None
@@ -146,20 +157,44 @@ def _generate_xai_fallback(
     }
 
 
-# ─── Core model caller with retry ────────────────────────────────────────────
+# ─── Core model caller with retry and fallbacks ────────────────────────────────
 
 @_llm_retry
 def _call_model_sync(prompt: str) -> str:
-    """Synchronous Gemini call wrapped in tenacity retry decorator."""
-    if not _model:
+    """Synchronous Gemini call wrapped in tenacity retry with model fallbacks."""
+    if not settings.GOOGLE_API_KEY:
         return ""
-    resp = _model.generate_content(prompt)
-    return resp.text or ""
+
+    last_err = None
+    for model_name in FALLBACK_MODELS:
+        try:
+            model_instance = genai.GenerativeModel(model_name)
+            resp = model_instance.generate_content(prompt)
+            if not resp.text:
+                raise ValueError("Empty response from LLM")
+            return resp.text
+        except Exception as e:
+            msg = str(e).lower()
+            log.warning(
+                "gemini_model_fallback_attempt",
+                model=model_name,
+                error=str(e),
+                note="Trying next fallback model or retrying..."
+            )
+            last_err = e
+            # Switch to next model immediately for availability (404) or quota (429) issues
+            if any(k in msg for k in ["404", "not found", "no longer available", "429", "quota", "exhausted"]):
+                continue
+            raise e
+
+    if last_err:
+        raise last_err
+    return ""
 
 
 async def _call_model(prompt: str, context: str = "") -> str:
-    """Async Gemini call with tenacity retry — uses run_in_executor."""
-    if not _model:
+    """Async Gemini call with tenacity retry and model fallback."""
+    if not settings.GOOGLE_API_KEY:
         return ""
     import asyncio
     try:

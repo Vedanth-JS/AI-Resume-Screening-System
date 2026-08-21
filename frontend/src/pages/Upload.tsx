@@ -12,7 +12,7 @@ import {
   FileType
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { candidateService, jobService, extractErrorMessage } from '@/services/api';
+import { candidateService, jobService, taskService, extractErrorMessage } from '@/services/api';
 
 interface UploadingFile {
   id: string;
@@ -58,9 +58,10 @@ export default function UploadPage() {
     const fetchJobs = async () => {
       try {
         const res = await jobService.getJobs();
-        if (res.data && res.data.length > 0) {
-          setJobs(res.data);
-          setSelectedJobId(res.data[0].id.toString());
+        const items = res.data?.items ?? (Array.isArray(res.data) ? res.data : []);
+        if (items.length > 0) {
+          setJobs(items);
+          setSelectedJobId(String(items[0].id));
         }
       } catch (err) {
         console.error("Failed to fetch jobs", err);
@@ -149,10 +150,8 @@ export default function UploadPage() {
           attempts++;
 
           try {
-            const statusRes = await fetch(`/api/tasks/${taskId}/status`, {
-              headers: { Authorization: `Bearer ${localStorage.getItem('access_token')}` }
-            });
-            const statusData = await statusRes.json();
+            const statusRes = await taskService.getStatus(taskId);
+            const statusData = statusRes.data;
             const pct = Math.min(statusData.progress ?? 30, 99);
             const step = statusData.current_step || getStepLabel(pct).label;
 
@@ -226,9 +225,7 @@ export default function UploadPage() {
 
   const canStartBatch = () => {
     const pendingFiles = files.filter(f => f.status === 'PENDING');
-    const hasValidFiles = pendingFiles.length > 0;
-    const isProcessing = isBatchProcessing;
-    return hasValidFiles && !isProcessing;
+    return pendingFiles.length > 0 && !!selectedJobId && !isBatchProcessing;
   };
 
   const removeFile = (id: string) => {
@@ -241,20 +238,24 @@ export default function UploadPage() {
         <h1 className="text-4xl font-bold font-display tracking-tight uppercase italic underline decoration-primary underline-offset-8">Bulk Screening Lab</h1>
         <p className="text-muted-foreground max-w-lg mx-auto text-sm">Upload up to 50 resumes simultaneously. Our AI engine will deduplicate, parse, and score them in real-time.</p>
         
-        {jobs.length > 0 && (
-          <div className="pt-4 max-w-md mx-auto animate-in fade-in slide-in-from-top-2">
-             <label className="block text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2">Target Job Requisition</label>
-             <select 
-               value={selectedJobId} 
-               onChange={(e) => setSelectedJobId(e.target.value)}
-               className="w-full h-12 px-4 bg-card border rounded-2xl text-sm font-medium focus:ring-2 focus:ring-primary outline-none shadow-sm transition-all"
-             >
-               {jobs.map(job => (
-                 <option key={job.id} value={job.id}>{job.title} - {job.department?.name || 'General'}</option>
-               ))}
-             </select>
-          </div>
-        )}
+        <div className="pt-4 max-w-md mx-auto animate-in fade-in slide-in-from-top-2">
+          <label className="block text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2">Target Job Requisition</label>
+          {jobs.length > 0 ? (
+            <select 
+              value={selectedJobId} 
+              onChange={(e) => setSelectedJobId(e.target.value)}
+              className="w-full h-12 px-4 bg-card border rounded-2xl text-sm font-medium focus:ring-2 focus:ring-primary outline-none shadow-sm transition-all"
+            >
+              {jobs.map(job => (
+                <option key={job.id} value={job.id}>{job.title}</option>
+              ))}
+            </select>
+          ) : (
+            <p className="text-sm text-amber-500 font-medium">
+              No jobs found. Create a job posting first, then return here to screen resumes.
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Dropzone */}
@@ -366,7 +367,7 @@ export default function UploadPage() {
                    </div>
                 )}
 
-                {file.status === 'COMPLETED' && file.score && (
+                {file.status === 'COMPLETED' && file.score != null && (
                    <div className="absolute top-2 right-12 flex items-center gap-1.5 px-3 py-1 bg-green-500 text-white rounded-full text-[10px] font-black italic shadow-lg shadow-green-500/20 animate-in zoom-in-50 duration-500">
                       <Bot className="w-3.5 h-3.5" />
                       SCORE: {file.score}

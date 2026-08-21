@@ -32,7 +32,7 @@ class EmbeddingPipeline:
                         model_version = EXCLUDED.model_version,
                         updated_at = NOW()
                 """),
-                {"cid": candidate_id, "vec": vector},
+                {"cid": candidate_id, "vec": str(vector)},
             )
             await self.db.commit()
             return True

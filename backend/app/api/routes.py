@@ -9,13 +9,13 @@ import io
 import csv
 import hashlib
 
-from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Request, Query
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Request, Query, Body
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import redis as redis_lib
 
-from ..db.database import get_db
+from ..db.database import get_db, AsyncSessionLocal
 from ..db.repositories.job_repo import JobRepository
 from ..db.repositories.candidate_repo import CandidateRepository
 from ..db.repositories.application_repo import ApplicationRepository
@@ -162,6 +162,9 @@ async def upload_resume(
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "Only PDF files are supported")
 
+    # Close DB session to release connection back to pool during slow external API calls
+    await db.close()
+
     try:
         result = await workflow.process(
             content,
@@ -181,64 +184,65 @@ async def upload_resume(
                 "Failed to extract text from PDF. The file may be corrupt, scanned without OCR, or password-protected."
             )
 
-        cand_repo = CandidateRepository(db)
-        candidate = await cand_repo.create(
-            org_id=request.state.org_id,
-            name=result["candidate"]["name"],
-            email=result["candidate"]["email"],
-            phone=result["candidate"].get("phone"),
-            raw_text=result["candidate"]["raw_text"],
-            parsed_json=result["candidate"],
-            status="new",
-        )
+        async with AsyncSessionLocal() as fresh_db:
+            cand_repo = CandidateRepository(fresh_db)
+            candidate = await cand_repo.create(
+                org_id=request.state.org_id,
+                name=result["candidate"]["name"],
+                email=result["candidate"]["email"],
+                phone=result["candidate"].get("phone"),
+                raw_text=result["candidate"]["raw_text"],
+                parsed_json=result["candidate"],
+                status="new",
+            )
 
-        app_repo = ApplicationRepository(db)
-        application = await app_repo.create(
-            org_id=request.state.org_id,
-            candidate_id=candidate.id,
-            job_id=job.id,
-            score=result["score"],
-            status="SCREENED",
-        )
+            app_repo = ApplicationRepository(fresh_db)
+            application = await app_repo.create(
+                org_id=request.state.org_id,
+                candidate_id=candidate.id,
+                job_id=job.id,
+                score=result["score"],
+                status="SCREENED",
+            )
 
-        # Also persist ScreeningResult for the breakdown
-        breakdown = result.get("breakdown") or {}
-        xai = breakdown.get("xai") or {}
-        kw_detail = breakdown.get("keyword_detail") or {}
-        screening = models.ScreeningResult(
-            application_id=application.id,
-            job_id=job.id,
-            llm_model="gemini-1.5-flash",
-            prompt_version="3.0",
-            score=result.get("score") or 0.0,
-            keyword_score=breakdown.get("keyword_score") or 0.0,
-            semantic_score=breakdown.get("semantic_score"),
-            skills_score=breakdown.get("keyword_score") or 0.0,
-            experience_score=breakdown.get("experience_score") or 0.0,
-            education_score=80.0,
-            format_score=breakdown.get("format_score") or 0.0,
-            section_score=breakdown.get("section_score"),
-            certs_score=5.0,
-            matched_skills=kw_detail.get("matched", []),
-            missing_skills=kw_detail.get("missing", []),
-            red_flags=xai.get("red_flags", []),
-            xai_json=xai,
-            reasoning=xai.get("hiring_recommendation") or result.get("explanation") or "",
-            bias_flags=result.get("bias") or {},
-        )
-        db.add(screening)
+            # Also persist ScreeningResult for the breakdown
+            breakdown = result.get("breakdown") or {}
+            xai = breakdown.get("xai") or {}
+            kw_detail = breakdown.get("keyword_detail") or {}
+            screening = models.ScreeningResult(
+                application_id=application.id,
+                job_id=job.id,
+                llm_model=settings.LLM_MODEL,
+                prompt_version="3.0",
+                score=result.get("score") or 0.0,
+                keyword_score=breakdown.get("keyword_score") or 0.0,
+                semantic_score=breakdown.get("semantic_score"),
+                skills_score=breakdown.get("keyword_score") or 0.0,
+                experience_score=breakdown.get("experience_score") or 0.0,
+                education_score=80.0,
+                format_score=breakdown.get("format_score") or 0.0,
+                section_score=breakdown.get("section_score"),
+                certs_score=5.0,
+                matched_skills=kw_detail.get("matched", []),
+                missing_skills=kw_detail.get("missing", []),
+                red_flags=xai.get("red_flags", []),
+                xai_json=xai,
+                reasoning=xai.get("hiring_recommendation") or result.get("explanation") or "",
+                bias_flags=result.get("bias") or {},
+            )
+            fresh_db.add(screening)
 
-        rag = RAGService(db)
-        await rag.index_candidate(candidate)
-        await db.commit()
+            rag = RAGService(fresh_db)
+            await rag.index_candidate(candidate)
+            await fresh_db.commit()
 
-        return {
-            "success": True,
-            "message": "Resume processed successfully",
-            "application_id": application.id,
-            "candidate_id": candidate.id,
-            "analysis": result,
-        }
+            return {
+                "success": True,
+                "message": "Resume processed successfully",
+                "application_id": application.id,
+                "candidate_id": candidate.id,
+                "analysis": result,
+            }
 
     except HTTPException:
         raise
@@ -748,23 +752,191 @@ async def get_batch_status(
 # INTERVIEW KITS (non-duplicate routes only — /interviews paths kept in interviews.py)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@router.post("/interviews/{kit_id}/scorecard")
-async def submit_scorecard(
+@router.get("/interviews/{kit_id}")
+async def get_interview_kit(
     kit_id: int,
-    scores: dict,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(RecruiterOnly),
 ):
-    total = sum(scores.values()) / len(scores) if scores else 0
+    kit = await db.get(models.InterviewKit, kit_id)
+    if not kit:
+        raise HTTPException(404, "Interview kit not found")
+    
+    candidate = await db.get(models.Candidate, kit.candidate_id)
+    job = await db.get(models.JobPosting, kit.job_id)
+    
+    stmt = select(models.Application).where(
+        models.Application.candidate_id == kit.candidate_id,
+        models.Application.job_id == kit.job_id
+    )
+    app = (await db.execute(stmt)).scalars().first()
+    
+    return {
+        "id": kit.id,
+        "job_id": kit.job_id,
+        "job_title": job.title if job else "Unknown Job",
+        "candidate_id": kit.candidate_id,
+        "candidate_name": candidate.name if candidate else "Unknown Candidate",
+        "application_id": app.id if app else None,
+        "focus_areas": kit.focus_areas,
+        "difficulty": kit.difficulty,
+        "questions": kit.questions,
+        "created_at": kit.created_at,
+        "updated_at": kit.updated_at,
+    }
+
+
+@router.post("/interviews/{kit_id}/scorecard")
+async def submit_scorecard(
+    kit_id: int,
+    payload: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(RecruiterOnly),
+):
+    scores = payload.get("scores", payload) if isinstance(payload, dict) else {}
+    scores_cleaned = {}
+    for k, v in scores.items():
+        try:
+            scores_cleaned[str(k)] = float(v)
+        except (ValueError, TypeError):
+            pass
+
+    total = sum(scores_cleaned.values()) / len(scores_cleaned) if scores_cleaned else 0.0
     rec = "Strong Hire" if total > 4 else "Hire" if total > 3 else "No Hire"
 
     scorecard = models.InterviewScorecard(
         kit_id=kit_id,
         recruiter_id=current_user.id,
-        scores=scores,
+        scores=scores_cleaned,
         total_score=total,
         ai_recommendation=rec,
     )
     db.add(scorecard)
     await db.commit()
     return scorecard
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PIPELINE KANBAN — Application Status Management
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_VALID_PIPELINE_STATUSES = frozenset({
+    "APPLIED", "SCREENING", "INTERVIEW", "OFFER", "REJECTED",
+    # Legacy values for backward compat
+    "new", "SCREENED", "screened",
+})
+
+
+@router.put(
+    "/applications/{application_id}/status",
+    summary="Update application pipeline status",
+    description="Moves a candidate between Kanban pipeline stages. Creates an in-app notification on status change.",
+    tags=["Candidates"],
+)
+async def update_application_status(
+    application_id: int,
+    payload: schemas.ApplicationStatusUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(RecruiterOnly),
+):
+    """Update Application.status for Kanban pipeline drag-and-drop."""
+    new_status = payload.status.upper()
+    # Normalise to canonical pipeline statuses
+    _canonical = {
+        "NEW": "APPLIED", "APPLIED": "APPLIED",
+        "SCREENED": "SCREENING", "SCREENING": "SCREENING",
+        "INTERVIEW": "INTERVIEW", "OFFER": "OFFER",
+        "REJECTED": "REJECTED",
+    }
+    new_status = _canonical.get(new_status, new_status)
+    if new_status not in {"APPLIED", "SCREENING", "INTERVIEW", "OFFER", "REJECTED"}:
+        raise HTTPException(400, f"Invalid status '{payload.status}'. Must be one of: APPLIED, SCREENING, INTERVIEW, OFFER, REJECTED")
+
+    stmt = select(models.Application).where(
+        models.Application.id == application_id,
+        models.Application.org_id == request.state.org_id,
+    )
+    app = (await db.execute(stmt)).scalars().first()
+    if not app:
+        raise HTTPException(404, "Application not found")
+
+    old_status = app.status
+    app.status = new_status
+
+    # In-app notification
+    candidate = await db.get(models.Candidate, app.candidate_id)
+    cand_name = candidate.name if candidate else f"Candidate #{app.candidate_id}"
+    notification = models.Notification(
+        user_id=current_user.id,
+        message=f"{cand_name}: moved from {old_status} → {new_status}",
+    )
+    db.add(notification)
+    await db.commit()
+
+    return {
+        "application_id": application_id,
+        "old_status": old_status,
+        "new_status": new_status,
+        "candidate_name": cand_name,
+    }
+
+
+@router.get(
+    "/pipeline",
+    summary="Get all applications grouped by pipeline stage",
+    tags=["Candidates"],
+)
+async def get_pipeline(
+    request: Request,
+    job_id: Optional[int] = Query(default=None, description="Filter by job"),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(ViewerOnly),
+):
+    """Returns all applications grouped into Kanban columns."""
+    stmt = (
+        select(models.Application, models.Candidate, models.ScreeningResult)
+        .join(models.Candidate, models.Candidate.id == models.Application.candidate_id)
+        .outerjoin(
+            models.ScreeningResult,
+            models.ScreeningResult.application_id == models.Application.id,
+        )
+        .where(models.Application.org_id == request.state.org_id)
+        .where(models.Candidate.deleted_at.is_(None))
+    )
+    if job_id:
+        stmt = stmt.where(models.Application.job_id == job_id)
+
+    rows = (await db.execute(stmt)).all()
+
+    # Normalise old status values into pipeline stages
+    _stage_map = {
+        "new": "APPLIED", "applied": "APPLIED", "APPLIED": "APPLIED",
+        "screened": "SCREENING", "SCREENED": "SCREENING", "SCREENING": "SCREENING",
+        "interview": "INTERVIEW", "INTERVIEW": "INTERVIEW",
+        "offer": "OFFER", "OFFER": "OFFER",
+        "rejected": "REJECTED", "REJECTED": "REJECTED",
+    }
+    stages = {"APPLIED": [], "SCREENING": [], "INTERVIEW": [], "OFFER": [], "REJECTED": []}
+
+    for app, cand, screening in rows:
+        stage = _stage_map.get(app.status or "APPLIED", "APPLIED")
+        verdict = None
+        if screening and screening.xai_json:
+            verdict = screening.xai_json.get("verdict")
+        stages[stage].append({
+            "application_id": app.id,
+            "candidate_id": cand.id,
+            "candidate_name": cand.name,
+            "candidate_email": cand.email,
+            "score": app.score,
+            "verdict": verdict,
+            "job_id": app.job_id,
+            "matched_skills": screening.matched_skills if screening else [],
+        })
+
+    return {
+        "stages": stages,
+        "total": sum(len(v) for v in stages.values()),
+    }
+
