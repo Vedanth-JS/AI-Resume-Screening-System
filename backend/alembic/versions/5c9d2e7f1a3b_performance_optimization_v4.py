@@ -24,6 +24,29 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # ─── Create missing activity_logs table ──────────────────────────────
+    op.create_table(
+        'activity_logs',
+        sa.Column('id', sa.Integer(), nullable=False),
+        sa.Column('org_id', sa.Integer(), nullable=False),
+        sa.Column('user_id', sa.Integer(), nullable=False),
+        sa.Column('action', sa.String(length=100), nullable=False),
+        sa.Column('entity_type', sa.String(length=50), nullable=False),
+        sa.Column('entity_id', sa.Integer(), nullable=False),
+        sa.Column('details', postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default='{}'),
+        sa.Column('metadata', postgresql.JSONB(astext_type=sa.Text()), nullable=False, server_default='{}'),
+        sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.ForeignKeyConstraint(['org_id'], ['organizations.id'], ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(['user_id'], ['users.id']),
+        sa.PrimaryKeyConstraint('id'),
+    )
+    op.create_index('ix_activity_logs_id', 'activity_logs', ['id'])
+    op.create_index('ix_activity_logs_org_id', 'activity_logs', ['org_id'])
+    op.create_index('ix_activity_logs_user_id', 'activity_logs', ['user_id'])
+    op.create_index('ix_activity_entity', 'activity_logs', ['entity_type', 'entity_id'])
+    op.create_index('ix_activity_org_time', 'activity_logs', ['org_id', 'created_at'])
+
     # ─── 1. Composite indexes for common multi-tenant queries ─────────────
     op.create_index('ix_candidates_org_status', 'candidates',
                     ['org_id', 'status', 'deleted_at'])
@@ -47,8 +70,8 @@ def upgrade() -> None:
     # Audit query indexes
     op.create_index('ix_auth_audit_org_event_time', 'auth_audit_logs',
                     ['org_id', 'event', 'created_at'])
-    op.create_index('ix_audit_logs_org_action_time', 'audit_logs',
-                    ['org_id', 'action', 'created_at'])
+    op.create_index('ix_audit_logs_user_action_time', 'audit_logs',
+                    ['user_id', 'action', 'created_at'])
 
     # ─── 2. GIN indexes on JSONB arrays (skills, tags) ───────────────────
     # job_postings.required_skills is JSONB array — GIN for containment queries
@@ -249,7 +272,7 @@ def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS ix_job_postings_skills_gin")
 
     # Drop composite indexes
-    op.drop_index('ix_audit_logs_org_action_time', table_name='audit_logs')
+    op.drop_index('ix_audit_logs_user_action_time', table_name='audit_logs')
     op.drop_index('ix_auth_audit_org_event_time', table_name='auth_audit_logs')
     op.drop_index('ix_screening_results_job_score', table_name='screening_results')
     op.drop_index('ix_screening_results_app_id', table_name='screening_results')
@@ -260,3 +283,4 @@ def downgrade() -> None:
     op.drop_index('ix_job_postings_org_status', table_name='job_postings')
     op.drop_index('ix_candidates_org_email', table_name='candidates')
     op.drop_index('ix_candidates_org_status', table_name='candidates')
+    op.drop_table('activity_logs')
