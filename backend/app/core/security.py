@@ -88,9 +88,30 @@ class CSPMiddleware(BaseHTTPMiddleware):
 
 def get_cors_config() -> dict:
     """Production-safe CORS configuration."""
-    origins = settings.CORS_ORIGINS if settings.CORS_ORIGINS != ["*"] else (
-        ["http://localhost:3000", "http://localhost:4173"]  # Safe defaults
-    )
+    raw_origins = settings.CORS_ORIGINS
+    
+    # Robustly parse list vs string inputs
+    if isinstance(raw_origins, str):
+        import json
+        try:
+            origins = json.loads(raw_origins)
+        except Exception:
+            # Handle plain comma-separated string or raw URL string
+            if "," in raw_origins:
+                origins = [o.strip() for o in raw_origins.split(",")]
+            else:
+                origins = [raw_origins.strip()]
+    else:
+        origins = list(raw_origins)
+
+    if origins == ["*"]:
+        origins = ["http://localhost:3000", "http://localhost:4173"]
+
+    # Always ensure the Vercel production frontend is allowed programmatically
+    vercel_origin = "https://ai-resume-screening-system-sooty.vercel.app"
+    if vercel_origin not in origins:
+        origins.append(vercel_origin)
+
     return {
         "allow_origins": origins,
         "allow_credentials": True,
