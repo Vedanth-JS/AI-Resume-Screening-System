@@ -30,6 +30,9 @@ RUN useradd -m -u 1000 appuser && \
 COPY --from=builder /install /usr/local
 COPY . .
 
+# Give execution permission to start script
+RUN chmod +x start.sh
+
 # Ensure appuser owns the application directory
 RUN chown -R appuser:appuser /app
 
@@ -43,4 +46,4 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
+CMD ["./start.sh"]
