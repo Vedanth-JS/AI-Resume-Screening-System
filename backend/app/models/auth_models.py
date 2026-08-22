@@ -50,7 +50,7 @@ class OAuthAccount(Base, TimestampMixin):
     __tablename__ = "oauth_accounts"
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    provider: Mapped[OAuthProvider] = mapped_column(SAEnum(OAuthProvider))
+    provider: Mapped[OAuthProvider] = mapped_column(SAEnum(OAuthProvider, native_enum=False))
     provider_user_id: Mapped[str] = mapped_column(String(255), index=True)
     provider_email: Mapped[str] = mapped_column(String(255))
     access_token: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -70,7 +70,7 @@ class MFADevice(Base, TimestampMixin):
     __tablename__ = "mfa_devices"
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
-    provider: Mapped[MFAProvider] = mapped_column(SAEnum(MFAProvider))
+    provider: Mapped[MFAProvider] = mapped_column(SAEnum(MFAProvider, native_enum=False))
     name: Mapped[str] = mapped_column(String(100))  # e.g., "Authy", "SMS +1-555-0199"
     secret: Mapped[Optional[str]] = mapped_column(String(256), nullable=True)  # TOTP secret
     is_primary: Mapped[bool] = mapped_column(default=False)
@@ -88,8 +88,8 @@ class UserSession(Base, TimestampMixin):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     session_token: Mapped[str] = mapped_column(String(512), unique=True, index=True)
     refresh_token_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    status: Mapped[SessionStatus] = mapped_column(SAEnum(SessionStatus), default=SessionStatus.ACTIVE)
-    device_type: Mapped[DeviceType] = mapped_column(SAEnum(DeviceType))
+    status: Mapped[SessionStatus] = mapped_column(SAEnum(SessionStatus, native_enum=False), default=SessionStatus.ACTIVE)
+    device_type: Mapped[DeviceType] = mapped_column(SAEnum(DeviceType, native_enum=False))
     device_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)
     user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
