@@ -12,16 +12,9 @@ RUN apt-get update && apt-get install -y \
 # Split Requirements to optimize layer caching
 COPY requirements.txt .
 
-# 1. Install Heavy AI Dependencies first (Less frequent changes)
-RUN grep -a -E "torch|spacy|sentence-transformers" requirements.txt > req_ai.txt && \
-    pip install --no-cache-dir --prefix=/install --extra-index-url https://download.pytorch.org/whl/cpu -r req_ai.txt
-
-# 2. Install Remaining Core Dependencies
+# Install Core Dependencies (skipping heavy AI/ML libraries to fit Render Free Tier 512MB RAM)
 RUN grep -a -vE "torch|spacy|sentence-transformers" requirements.txt > req_core.txt && \
     pip install --default-timeout=1000 --no-cache-dir --prefix=/install -r req_core.txt
-
-# 3. Download Spacy Model
-RUN pip install --no-cache-dir --prefix=/install https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
 
 # ─── Stage 2: Production Runtime ───────────────────────────────────────────────
 FROM python:3.11-slim as runtime
