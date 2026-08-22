@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || '/api';
 
 const api = axios.create({ baseURL: API_BASE_URL });
 
@@ -192,6 +192,16 @@ export const savedSearchService = {
 
 
 export const extractErrorMessage = (err, defaultMessage = 'An unexpected error occurred') => {
+  console.error('API Connection Error Details:', {
+    message: err?.message,
+    status: err?.response?.status,
+    data: err?.response?.data,
+    config: {
+      url: err?.config?.url,
+      method: err?.config?.method,
+      baseURL: err?.config?.baseURL
+    }
+  });
   if (!err) return defaultMessage;
   
   if (err.response?.data?.detail) {
