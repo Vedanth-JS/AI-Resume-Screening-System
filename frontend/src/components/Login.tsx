@@ -8,12 +8,6 @@ interface LoginProps {
   onLogin: () => void;
 }
 
-const OAUTH_PROVIDERS = [
-  { provider: "google", label: "Google", color: "#4285F4", icon: "G" },
-  { provider: "github", label: "GitHub", color: "#333", icon: "GH" },
-  { provider: "microsoft", label: "Microsoft", color: "#00A4EF", icon: "MS" },
-  { provider: "linkedin", label: "LinkedIn", color: "#0A66C2", icon: "in" },
-];
 
 export default function Login({ onLogin }: LoginProps) {
   const [email, setEmail] = useState("admin@ai-ats.com");
@@ -65,18 +59,6 @@ export default function Login({ onLogin }: LoginProps) {
     }
   };
 
-  const handleOAuthLogin = async (provider: string) => {
-    try {
-      const redirectUri = `${window.location.origin}/auth/callback`;
-      const res = await api.post("/auth/oauth/initiate", {
-        provider,
-        redirect_uri: redirectUri,
-      });
-      window.location.href = res.data.authorize_url;
-    } catch {
-      setError("Social login unavailable — provider not configured");
-    }
-  };
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-[#FFF9F0]">
@@ -150,32 +132,6 @@ export default function Login({ onLogin }: LoginProps) {
             </Button>
           </form>
 
-          {!showMFA && (
-            <>
-              <div className="flex items-center gap-3 my-5">
-                <div className="flex-1 h-[3px] bg-black/10 rounded-full" />
-                <span className="text-xs font-bold text-black/40 uppercase tracking-wider">or continue with</span>
-                <div className="flex-1 h-[3px] bg-black/10 rounded-full" />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                {OAUTH_PROVIDERS.map((p) => (
-                  <button
-                    key={p.provider}
-                    type="button"
-                    onClick={() => handleOAuthLogin(p.provider)}
-                    className="flex items-center justify-center gap-2 py-3 px-4 border-[3px] border-black rounded-xl font-bold text-sm hover:shadow-[4px_4px_0px_#000] hover:-translate-x-[2px] hover:-translate-y-[2px] transition-all bg-white"
-                    style={{ color: p.color }}
-                  >
-                    <span className="w-5 h-5 rounded-full flex items-center justify-center border-2 border-current font-black text-[10px]">
-                      {p.icon}
-                    </span>
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
         </Card>
 
         <p className="text-center mt-6 font-bold text-black/60">
