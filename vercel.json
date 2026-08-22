@@ -7,10 +7,27 @@
   },
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/assets/(.*)",
       "destination": {
         "type": "service",
-        "service": "frontend"
+        "service": "frontend",
+        "path": "/assets/$1"
+      }
+    },
+    {
+      "source": "/((?!assets/)[^.]+\\.[a-zA-Z0-9]+$)",
+      "destination": {
+        "type": "service",
+        "service": "frontend",
+        "path": "/$1"
+      }
+    },
+    {
+      "source": "/((?!assets/)[^.]*)",
+      "destination": {
+        "type": "service",
+        "service": "frontend",
+        "path": "/index.html"
       }
     }
   ]
