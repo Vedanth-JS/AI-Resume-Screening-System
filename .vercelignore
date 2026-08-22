@@ -1,0 +1,11 @@
+backend/
+nginx/
+deploy/
+docker-compose.yml
+db_config_in_container.py
+run_production.ps1
+start_dev.bat
+test_data/
+screenshots/
+.pytest_cache/
+.venv/
