@@ -164,7 +164,8 @@ def register_exception_handlers(app: FastAPI) -> None:
             status_code=500,
             content={
                 "error": "internal_error",
-                "message": "An unexpected error occurred. The incident has been logged.",
+                "message": str(exc),
+                "traceback": tb,
                 "request_id": getattr(request.state, "request_id", None),
             },
         )
