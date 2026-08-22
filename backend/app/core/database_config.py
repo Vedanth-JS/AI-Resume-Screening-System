@@ -79,7 +79,6 @@ def create_production_engine() -> AsyncEngine:
             "pool_timeout": POOL_TIMEOUT,
             "pool_recycle": POOL_RECYCLE,
             "pool_pre_ping": True,
-            "prepared_statement_cache_size": 0,  # Disable statement caching for Supabase connection pooler
             "connect_args": {
                 "timeout": 10,  # connection timeout
                 "command_timeout": STATEMENT_TIMEOUT_MS / 1000,  # per-query timeout
