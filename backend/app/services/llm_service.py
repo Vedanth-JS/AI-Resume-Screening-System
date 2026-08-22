@@ -1,6 +1,6 @@
 """
 LLM Service — all Gemini API calls.
-Uses google-generativeai with structured prompts and robust JSON parsing.
+Uses google-genai (new SDK) with structured prompts and robust JSON parsing.
 
 Retry strategy (tenacity):
   - max 4 attempts
@@ -10,10 +10,18 @@ Retry strategy (tenacity):
 import json
 import re
 import time
-import google.generativeai as genai
 from typing import Dict, Any, List, Optional
 from ..core.config import settings
 from ..core.logger import log
+
+# Use new google-genai SDK
+try:
+    from google import genai as genai_new
+    from google.genai import types as genai_types
+    _NEW_SDK = True
+except ImportError:
+    _NEW_SDK = False
+    import google.generativeai as genai  # fallback to old SDK
 
 # ─── Tenacity retry setup ──────────────────────────────────────────────────────
 try:
@@ -68,11 +76,14 @@ FALLBACK_MODELS = [
 FALLBACK_MODELS = list(dict.fromkeys(FALLBACK_MODELS))
 
 if settings.GOOGLE_API_KEY:
-    genai.configure(api_key=settings.GOOGLE_API_KEY)
-    _model = genai.GenerativeModel(settings.LLM_MODEL)
-    _embedding_model = "models/gemini-embedding-2"
+    if _NEW_SDK:
+        _genai_client = genai_new.Client(api_key=settings.GOOGLE_API_KEY)
+    else:
+        genai.configure(api_key=settings.GOOGLE_API_KEY)
+        _genai_client = None
+    _embedding_model = "gemini-embedding-2"
 else:
-    _model = None
+    _genai_client = None
     _embedding_model = None
     log.warning("gemini_not_configured", note="Set GOOGLE_API_KEY for AI features.")
 
@@ -83,14 +94,25 @@ def _embed_with_retry(text: str, task_type: str = "retrieval_document") -> List[
     Synchronous Gemini embedding call wrapped in tenacity retry.
     Separated so tenacity can intercept and retry without async complexity.
     """
-    result = genai.embed_content(
-        model=_embedding_model,
-        content=text,
-        task_type=task_type,
-        output_dimensionality=768,
-        title="Resume Content",
-    )
-    return result["embedding"]
+    if _NEW_SDK and _genai_client:
+        result = _genai_client.models.embed_content(
+            model=_embedding_model,
+            contents=text,
+            config=genai_types.EmbedContentConfig(
+                task_type=task_type,
+                output_dimensionality=768,
+            ),
+        )
+        return result.embeddings[0].values
+    else:
+        # Fallback to old SDK
+        result = genai.embed_content(
+            model=f"models/{_embedding_model}",
+            content=text,
+            task_type=task_type,
+            output_dimensionality=768,
+        )
+        return result["embedding"]
 
 
 async def get_embedding(text: str) -> List[float]:
@@ -168,11 +190,20 @@ def _call_model_sync(prompt: str) -> str:
     last_err = None
     for model_name in FALLBACK_MODELS:
         try:
-            model_instance = genai.GenerativeModel(model_name)
-            resp = model_instance.generate_content(prompt)
-            if not resp.text:
-                raise ValueError("Empty response from LLM")
-            return resp.text
+            if _NEW_SDK and _genai_client:
+                resp = _genai_client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                )
+                if not resp.text:
+                    raise ValueError("Empty response from LLM")
+                return resp.text
+            else:
+                model_instance = genai.GenerativeModel(model_name)
+                resp = model_instance.generate_content(prompt)
+                if not resp.text:
+                    raise ValueError("Empty response from LLM")
+                return resp.text
         except Exception as e:
             msg = str(e).lower()
             log.warning(
