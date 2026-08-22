@@ -4,9 +4,15 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BA
 
 const api = axios.create({ baseURL: API_BASE_URL });
 
-// JWT interceptor
+// JWT and path resolution interceptor
 api.interceptors.request.use(
   (config) => {
+    // Resolve Axios leading slash issue with baseURL subpaths (e.g. /api)
+    if (config.url && config.url.startsWith('/') && config.baseURL) {
+      const base = config.baseURL.endsWith('/') ? config.baseURL.slice(0, -1) : config.baseURL;
+      config.url = base + config.url;
+      config.baseURL = undefined;
+    }
     const token = localStorage.getItem('token');
     if (token) config.headers.Authorization = `Bearer ${token}`;
     return config;
