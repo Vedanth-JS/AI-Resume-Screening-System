@@ -60,13 +60,24 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 # ─── Global Exception Handlers ─────────────────────────────────────────────────
 
+def _add_cors_headers(request: Request, response: Response) -> Response:
+    """Manually add CORS headers to exception responses since they bypass CORSMiddleware."""
+    origin = request.headers.get("Origin")
+    if origin:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, PATCH, OPTIONS"
+        response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type, X-Request-ID, X-API-Key, X-Device-Name, X-CSRF-Token"
+    return response
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """Register all global exception handlers on the FastAPI app."""
 
     @app.exception_handler(AuthError)
     async def auth_error_handler(request: Request, exc: AuthError):
         """Handle custom AuthError from auth_service."""
-        return JSONResponse(
+        response = JSONResponse(
             status_code=exc.status_code,
             content={
                 "error": "auth_error",
@@ -76,6 +87,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             },
             headers=exc.extra if isinstance(exc.extra, dict) else None,
         )
+        return _add_cors_headers(request, response)
 
     @app.exception_handler(ValidationError)
     async def validation_error_handler(request: Request, exc: ValidationError):
@@ -87,7 +99,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "message": error["msg"],
                 "type": error["type"],
             })
-        return JSONResponse(
+        response = JSONResponse(
             status_code=422,
             content={
                 "error": "validation_error",
@@ -96,11 +108,12 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "request_id": getattr(request.state, "request_id", None),
             },
         )
+        return _add_cors_headers(request, response)
 
     @app.exception_handler(ValueError)
     async def value_error_handler(request: Request, exc: ValueError):
         """Handle ValueError (e.g., invalid UUID, bad enum)."""
-        return JSONResponse(
+        response = JSONResponse(
             status_code=400,
             content={
                 "error": "bad_request",
@@ -108,10 +121,11 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "request_id": getattr(request.state, "request_id", None),
             },
         )
+        return _add_cors_headers(request, response)
 
     @app.exception_handler(404)
     async def not_found_handler(request: Request, exc):
-        return JSONResponse(
+        response = JSONResponse(
             status_code=404,
             content={
                 "error": "not_found",
@@ -119,10 +133,11 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "request_id": getattr(request.state, "request_id", None),
             },
         )
+        return _add_cors_headers(request, response)
 
     @app.exception_handler(429)
     async def rate_limit_handler(request: Request, exc):
-        return JSONResponse(
+        response = JSONResponse(
             status_code=429,
             content={
                 "error": "rate_limited",
@@ -132,6 +147,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             },
             headers={"Retry-After": "60"},
         )
+        return _add_cors_headers(request, response)
 
     @app.exception_handler(500)
     async def internal_error_handler(request: Request, exc):
@@ -144,7 +160,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             error=str(exc),
             traceback=tb[-1000:],  # last 1000 chars
         )
-        return JSONResponse(
+        response = JSONResponse(
             status_code=500,
             content={
                 "error": "internal_error",
@@ -152,3 +168,4 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "request_id": getattr(request.state, "request_id", None),
             },
         )
+        return _add_cors_headers(request, response)
