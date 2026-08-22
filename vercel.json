@@ -1,34 +1,6 @@
 {
-  "services": {
-    "frontend": {
-      "root": "frontend",
-      "framework": "vite"
-    }
-  },
+  "cleanUrls": true,
   "rewrites": [
-    {
-      "source": "/assets/(.*)",
-      "destination": {
-        "type": "service",
-        "service": "frontend",
-        "path": "/assets/$1"
-      }
-    },
-    {
-      "source": "/((?!assets/)[^.]+\\.[a-zA-Z0-9]+$)",
-      "destination": {
-        "type": "service",
-        "service": "frontend",
-        "path": "/$1"
-      }
-    },
-    {
-      "source": "/((?!assets/)[^.]*)",
-      "destination": {
-        "type": "service",
-        "service": "frontend",
-        "path": "/index.html"
-      }
-    }
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
