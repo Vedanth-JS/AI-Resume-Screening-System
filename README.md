@@ -149,53 +149,41 @@ Access the application at:
 
 Below are the major modules of the AI Resume Screening System.
 
-## 📸 Application Screenshots
+## 📸 Live Application Screenshots
 
-### 🔐 Authentication & Dashboard
+### 🔐 1. Split-Panel Dark Mode Authentication & 3D ATS Preview
 
 <div align="center">
 
-<img src="screenshots/README_01_Login_Dashboard.png" width="100%"/>
+<img src="screenshots/01_Login_Register_Screen.jpg" width="100%" alt="Login and Registration Screen" />
 
 </div>
 
-> Secure authentication and a modern recruitment dashboard with real-time ATS metrics.
+> **Features**: Glassmorphic dark theme, mouse-tracking radial spotlight, animated floating particles, live stats, and 3D interactive ATS Candidate Pipeline preview with score rings.
 
 ---
 
-### 🤖 AI Interview & Candidate Management
+### 💼 2. Jobs Management & Candidate Pipeline
 
 <div align="center">
 
-<img src="screenshots/README_02_Interview_Candidates.png" width="100%"/>
+<img src="screenshots/02_Jobs_Candidate_Pipeline.jpg" width="100%" alt="Jobs Management Dashboard" />
 
 </div>
 
-> AI-generated interview kits, candidate scoring, smart shortlisting, and recruiter workflow.
+> **Features**: Manage active job postings, track applicant counts, average match scores, and monitor pipeline progress across all departments in real time.
 
 ---
 
-### 📊 Analytics Dashboard
+### 🔍 3. Gemini AI Semantic Search & Chat (RAG)
 
 <div align="center">
 
-<img src="screenshots/README_03_Analytics.png" width="100%"/>
+<img src="screenshots/03_AI_Chat_Vector_Search.jpg" width="100%" alt="AI Chat Natural Language Vector Search" />
 
 </div>
 
-> Recruitment analytics, hiring funnel, score distribution, hiring trends, and bias monitoring.
-
----
-
-### 📄 Bulk Resume Screening & AI Chat
-
-<div align="center">
-
-<img src="screenshots/README_04_Upload_AIChat.png" width="100%"/>
-
-</div>
-
-> Upload hundreds of resumes, process them in parallel, and search candidates using natural language.
+> **Features**: Natural language queries powered by Google Gemini embeddings and Supabase `pgvector` cosine similarity search for candidate matching.
 
 ---
 
