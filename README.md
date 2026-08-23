@@ -14,6 +14,24 @@
 
 ---
 
+## 🌐 Live Application & Demo
+
+[![Live Demo](https://img.shields.io/badge/🚀_Live_Demo-ai--resume--screening--system.vercel.app-FF6B35?style=for-the-badge&logo=vercel&logoColor=white)](https://ai-resume-screening-system-sooty.vercel.app)
+[![Backend Status](https://img.shields.io/badge/⚡_Backend_API-ai--ats--backend.onrender.com-46E3B7?style=for-the-badge&logo=render&logoColor=white)](https://ai-ats-backend-yv1f.onrender.com/docs)
+
+| Component | Live Deployment URL | Hosting Platform |
+| :--- | :--- | :--- |
+| **Frontend Web App** | [ai-resume-screening-system-sooty.vercel.app](https://ai-resume-screening-system-sooty.vercel.app) | **Vercel** |
+| **Backend REST API** | [ai-ats-backend-yv1f.onrender.com](https://ai-ats-backend-yv1f.onrender.com) | **Render** |
+| **Interactive API Docs** | [ai-ats-backend-yv1f.onrender.com/docs](https://ai-ats-backend-yv1f.onrender.com/docs) | **Swagger / OpenAPI** |
+| **Database & Vector Store** | PostgreSQL + `pgvector` | **Supabase** |
+
+### 🔑 Demo Login Credentials
+- **Email**: `vedanth@gmail.com`
+- **Password**: `Password123!`
+
+---
+
 ## 🚀 Overview
 
 An intelligent AI-powered Applicant Tracking System that revolutionizes recruitment workflows. Built with **FastAPI**, **React**, and **Google Gemini AI**, it automates resume parsing, skill matching, bias detection, and candidate scoring with enterprise-grade reliability.
