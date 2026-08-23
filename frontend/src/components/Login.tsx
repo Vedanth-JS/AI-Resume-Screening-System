@@ -219,164 +219,217 @@ export default function Login({ onLogin }: LoginProps) {
             </div>
           </div>
 
-          {/* ── Right: Animated Dashboard Mockup ── */}
-          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", position: "relative", minHeight: 520 }}>
+          {/* ── Right: Animated Floating Dashboard Mockup ── */}
+          <div style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            position: "relative",
+            minHeight: 580,
+            paddingLeft: 40,
+          }}>
 
-            {/* Main pipeline card */}
+            {/* Floating Container holding the main card & badges */}
             <div style={{
-              position: "absolute", top: "50%", left: "50%",
-              transform: "translate(-50%, -50%)",
-              width: 340, background: "rgba(255,255,255,0.05)",
-              border: "1px solid rgba(255,255,255,0.1)", borderRadius: 20,
-              backdropFilter: "blur(20px)", padding: 20,
-              boxShadow: "0 24px 64px rgba(0,0,0,0.4)",
+              position: "relative",
+              width: "100%",
+              maxWidth: 460,
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              animation: "floatMain 7s ease-in-out infinite",
             }}>
-              {/* Card header */}
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: "white" }}>Candidate Pipeline</span>
-                <span style={{
-                  fontSize: 10, fontWeight: 600, color: "#22c55e",
-                  background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.2)",
-                  borderRadius: 100, padding: "3px 10px",
-                }}>● LIVE</span>
-              </div>
 
-              {/* Pipeline stages bar */}
-              <div style={{ display: "flex", gap: 4, marginBottom: 18 }}>
+              {/* Main pipeline card */}
+              <div style={{
+                width: "100%",
+                background: "rgba(255, 255, 255, 0.05)",
+                border: "1.5px solid rgba(255, 255, 255, 0.12)",
+                borderRadius: 24,
+                backdropFilter: "blur(24px)",
+                padding: 24,
+                boxShadow: "0 30px 80px rgba(0,0,0,0.6), 0 0 50px rgba(255,107,53,0.12)",
+                transform: "perspective(1000px) rotateY(-3deg) rotateX(2deg)",
+                transition: "all 0.4s ease",
+              }}>
+                {/* Card header */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: "white", letterSpacing: -0.3 }}>Candidate Pipeline</div>
+                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 2 }}>Real-time Gemini AI Screening</div>
+                  </div>
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 6,
+                    fontSize: 11, fontWeight: 700, color: "#22c55e",
+                    background: "rgba(34,197,94,0.12)", border: "1px solid rgba(34,197,94,0.25)",
+                    borderRadius: 100, padding: "4px 12px",
+                  }}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#22c55e", animation: "livePulse 1.5s infinite" }} />
+                    LIVE
+                  </div>
+                </div>
+
+                {/* Pipeline stages bar */}
+                <div style={{ display: "flex", gap: 6, marginBottom: 22 }}>
+                  {[
+                    { label: "New", count: 27, color: "#6366f1", flex: 3.2 },
+                    { label: "Screened", count: 12, color: "#FF6B35", flex: 2.2 },
+                    { label: "Interview", count: 8, color: "#FFB347", flex: 1.8 },
+                    { label: "Offer", count: 3, color: "#22c55e", flex: 1.4 },
+                    { label: "Hired", count: 2, color: "#10b981", flex: 1.2 },
+                  ].map((stage, i) => (
+                    <div key={i} style={{ flex: stage.flex }}>
+                      <div style={{
+                        height: 7, borderRadius: 7,
+                        background: stage.color,
+                        opacity: 0.9,
+                        boxShadow: `0 0 10px ${stage.color}66`,
+                        animation: `barGrow 1.2s ${i * 0.15}s both ease-out`,
+                      }} />
+                      <div style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", marginTop: 6, fontWeight: 600 }}>{stage.label}</div>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: "white" }}>{stage.count}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Candidate rows */}
                 {[
-                  { label: "New", count: 27, color: "#6366f1", w: "32%" },
-                  { label: "Screen", count: 12, color: "#FF6B35", w: "22%" },
-                  { label: "Interview", count: 8, color: "#FFB347", w: "18%" },
-                  { label: "Offer", count: 3, color: "#22c55e", w: "14%" },
-                  { label: "Hired", count: 2, color: "#10b981", w: "14%" },
-                ].map((stage, i) => (
-                  <div key={i} style={{ flex: stage.w === "32%" ? 3.2 : stage.w === "22%" ? 2.2 : stage.w === "18%" ? 1.8 : 1.4 }}>
+                  { name: "Arjun Mehta", role: "Python Backend Dev", score: 96, avatar: "AM", color: "#FF6B35", status: "Top Match" },
+                  { name: "Priya Sharma", role: "React Frontend Engineer", score: 91, avatar: "PS", color: "#6366f1", status: "Interview" },
+                  { name: "Rahul Nair", role: "ML / AI Specialist", score: 84, avatar: "RN", color: "#22c55e", status: "Screened" },
+                  { name: "Sneha Patel", role: "Cloud DevOps Architect", score: 79, avatar: "SP", color: "#FFB347", status: "Review" },
+                ].map((c, i) => (
+                  <div key={i} style={{
+                    display: "flex", alignItems: "center", gap: 14,
+                    padding: "12px 14px", borderRadius: 14, marginBottom: 8,
+                    background: i === 0 ? "rgba(255,107,53,0.08)" : "rgba(255,255,255,0.04)",
+                    border: i === 0 ? "1px solid rgba(255,107,53,0.25)" : "1px solid rgba(255,255,255,0.06)",
+                    animation: `slideInRow 0.5s ${0.3 + i * 0.12}s both ease-out`,
+                    transition: "transform 0.2s ease",
+                  }}>
+                    {/* Avatar */}
                     <div style={{
-                      height: 6, borderRadius: 6,
-                      background: stage.color,
-                      opacity: 0.85,
-                      animation: `barGrow 1.2s ${i * 0.15}s both ease-out`,
-                    }} />
-                    <div style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", marginTop: 5, fontWeight: 600 }}>{stage.label}</div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: "white" }}>{stage.count}</div>
+                      width: 38, height: 38, borderRadius: "50%",
+                      background: `linear-gradient(135deg, ${c.color}, ${c.color}77)`,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 12, fontWeight: 800, color: "white", flexShrink: 0,
+                      boxShadow: `0 4px 12px ${c.color}44`,
+                    }}>{c.avatar}</div>
+
+                    {/* Info */}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "white" }}>{c.name}</span>
+                        {i === 0 && (
+                          <span style={{ fontSize: 9, fontWeight: 800, color: "#FF6B35", background: "rgba(255,107,53,0.15)", padding: "2px 6px", borderRadius: 4 }}>
+                            MATCH
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", marginTop: 2 }}>{c.role}</div>
+                    </div>
+
+                    {/* Score ring */}
+                    <div style={{ position: "relative", width: 40, height: 40, flexShrink: 0 }}>
+                      <svg width="40" height="40" viewBox="0 0 40 40" style={{ transform: "rotate(-90deg)" }}>
+                        <circle cx="20" cy="20" r="16" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="3.5" />
+                        <circle
+                          cx="20" cy="20" r="16" fill="none"
+                          stroke={c.color} strokeWidth="3.5"
+                          strokeLinecap="round"
+                          strokeDasharray={`${2 * Math.PI * 16}`}
+                          strokeDashoffset={`${2 * Math.PI * 16 * (1 - c.score / 100)}`}
+                          style={{ animation: `scoreRing 1.2s ${0.4 + i * 0.15}s both ease-out` }}
+                        />
+                      </svg>
+                      <div style={{
+                        position: "absolute", inset: 0,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: 11, fontWeight: 900, color: "white",
+                      }}>{c.score}</div>
+                    </div>
                   </div>
                 ))}
               </div>
 
-              {/* Candidate rows */}
-              {[
-                { name: "Arjun Mehta", role: "Python Engineer", score: 94, avatar: "AM", color: "#FF6B35", status: "Shortlisted" },
-                { name: "Priya Sharma", role: "React Developer", score: 88, avatar: "PS", color: "#6366f1", status: "Interview" },
-                { name: "Rahul Nair", role: "ML Engineer", score: 76, avatar: "RN", color: "#22c55e", status: "Screening" },
-              ].map((c, i) => (
-                <div key={i} style={{
-                  display: "flex", alignItems: "center", gap: 12,
-                  padding: "10px 12px", borderRadius: 12, marginBottom: 6,
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.06)",
-                  animation: `slideInRow 0.5s ${0.4 + i * 0.15}s both ease-out`,
-                }}>
-                  {/* Avatar */}
-                  <div style={{
-                    width: 34, height: 34, borderRadius: "50%",
-                    background: `linear-gradient(135deg, ${c.color}CC, ${c.color}66)`,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 11, fontWeight: 800, color: "white", flexShrink: 0,
-                  }}>{c.avatar}</div>
-                  {/* Info */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "white" }}>{c.name}</div>
-                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)" }}>{c.role}</div>
-                  </div>
-                  {/* Score ring */}
-                  <div style={{ position: "relative", width: 36, height: 36, flexShrink: 0 }}>
-                    <svg width="36" height="36" viewBox="0 0 36 36" style={{ transform: "rotate(-90deg)" }}>
-                      <circle cx="18" cy="18" r="14" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="3" />
-                      <circle
-                        cx="18" cy="18" r="14" fill="none"
-                        stroke={c.color} strokeWidth="3"
-                        strokeLinecap="round"
-                        strokeDasharray={`${2 * Math.PI * 14}`}
-                        strokeDashoffset={`${2 * Math.PI * 14 * (1 - c.score / 100)}`}
-                        style={{ animation: `scoreRing 1s ${0.5 + i * 0.15}s both ease-out` }}
-                      />
-                    </svg>
-                    <div style={{
-                      position: "absolute", inset: 0,
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 9, fontWeight: 800, color: "white",
-                    }}>{c.score}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Floating top-left: AI Match badge */}
-            <div style={{
-              position: "absolute", top: "4%", left: "-4%",
-              background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)",
-              borderRadius: 14, padding: "12px 16px", backdropFilter: "blur(12px)",
-              animation: "floatBadge 4s ease-in-out infinite",
-            }}>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", fontWeight: 600, marginBottom: 4 }}>AI MATCH SCORE</div>
-              <div style={{ fontSize: 22, fontWeight: 900, color: "white" }}>94<span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)" }}>%</span></div>
-              <div style={{ fontSize: 10, color: "#22c55e", fontWeight: 600, marginTop: 2 }}>▲ Top candidate</div>
-            </div>
-
-            {/* Floating top-right: New applicant */}
-            <div style={{
-              position: "absolute", top: "8%", right: "-6%",
-              background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.25)",
-              borderRadius: 14, padding: "10px 14px", backdropFilter: "blur(12px)",
-              animation: "floatBadge 5s 1s ease-in-out infinite",
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{
-                  width: 8, height: 8, borderRadius: "50%", background: "#22c55e",
-                  animation: "livePulse 1.5s infinite",
-                }} />
-                <span style={{ fontSize: 11, fontWeight: 700, color: "white" }}>New applicant</span>
-              </div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.7)", marginTop: 4 }}>Mohit Agarwal</div>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)" }}>Senior Dev • 7 yrs exp</div>
-            </div>
-
-            {/* Floating bottom-left: Time saved */}
-            <div style={{
-              position: "absolute", bottom: "6%", left: "-2%",
-              background: "rgba(255,107,53,0.12)", border: "1px solid rgba(255,107,53,0.25)",
-              borderRadius: 14, padding: "12px 16px", backdropFilter: "blur(12px)",
-              animation: "floatBadge 4.5s 0.5s ease-in-out infinite",
-            }}>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", fontWeight: 600, marginBottom: 2 }}>TIME SAVED TODAY</div>
-              <div style={{ fontSize: 20, fontWeight: 900, color: "#FF6B35" }}>4.2 hrs</div>
+              {/* ── Floating Badge 1 (Top-Left): AI Match Score ── */}
               <div style={{
-                height: 3, borderRadius: 3, marginTop: 6,
-                background: "linear-gradient(90deg, #FF6B35, #FFB347)",
-                width: "70%",
-              }} />
-            </div>
-
-            {/* Floating bottom-right: Activity */}
-            <div style={{
-              position: "absolute", bottom: "9%", right: "-4%",
-              background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
-              borderRadius: 14, padding: "10px 14px", backdropFilter: "blur(12px)",
-              animation: "floatBadge 6s 2s ease-in-out infinite",
-              minWidth: 150,
-            }}>
-              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", fontWeight: 600, marginBottom: 8 }}>RECENT ACTIVITY</div>
-              {[
-                { text: "Resume screened", time: "2s ago", dot: "#FF6B35" },
-                { text: "Interview scheduled", time: "1m ago", dot: "#6366f1" },
-                { text: "Offer sent", time: "5m ago", dot: "#22c55e" },
-              ].map((a, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
-                  <div style={{ width: 6, height: 6, borderRadius: "50%", background: a.dot, flexShrink: 0 }} />
-                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", flex: 1 }}>{a.text}</span>
-                  <span style={{ fontSize: 9, color: "rgba(255,255,255,0.25)" }}>{a.time}</span>
+                position: "absolute", top: "-28px", left: "-45px",
+                background: "rgba(15, 17, 32, 0.85)", border: "1px solid rgba(99,102,241,0.4)",
+                borderRadius: 16, padding: "14px 18px", backdropFilter: "blur(16px)",
+                boxShadow: "0 16px 36px rgba(0,0,0,0.5), 0 0 20px rgba(99,102,241,0.2)",
+                animation: "floatBadge 5s ease-in-out infinite",
+                zIndex: 20,
+              }}>
+                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 4 }}>AI SEMANTIC MATCH</div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 4 }}>
+                  <span style={{ fontSize: 26, fontWeight: 900, color: "white" }}>96</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: "#6366f1" }}>%</span>
                 </div>
-              ))}
+                <div style={{ fontSize: 10, color: "#22c55e", fontWeight: 700, marginTop: 2, display: "flex", alignItems: "center", gap: 4 }}>
+                  <span>▲</span> Gemini 2.5 Flash Match
+                </div>
+              </div>
+
+              {/* ── Floating Badge 2 (Top-Right): Live Applicant ── */}
+              <div style={{
+                position: "absolute", top: "20px", right: "-55px",
+                background: "rgba(15, 17, 32, 0.85)", border: "1px solid rgba(34,197,94,0.35)",
+                borderRadius: 16, padding: "12px 16px", backdropFilter: "blur(16px)",
+                boxShadow: "0 16px 36px rgba(0,0,0,0.5), 0 0 20px rgba(34,197,94,0.15)",
+                animation: "floatBadgeSlow 6s 1s ease-in-out infinite",
+                zIndex: 20,
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e", animation: "livePulse 1.5s infinite" }} />
+                  <span style={{ fontSize: 11, fontWeight: 800, color: "white" }}>New Resume Upload</span>
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 800, color: "#22c55e", marginTop: 4 }}>Mohit Agarwal</div>
+                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", marginTop: 1 }}>Senior Fullstack • 7 yrs exp</div>
+              </div>
+
+              {/* ── Floating Badge 3 (Bottom-Left): Time Saved ── */}
+              <div style={{
+                position: "absolute", bottom: "10px", left: "-50px",
+                background: "rgba(15, 17, 32, 0.85)", border: "1px solid rgba(255,107,53,0.35)",
+                borderRadius: 16, padding: "14px 18px", backdropFilter: "blur(16px)",
+                boxShadow: "0 16px 36px rgba(0,0,0,0.5), 0 0 20px rgba(255,107,53,0.15)",
+                animation: "floatBadgeFast 4.5s 0.5s ease-in-out infinite",
+                zIndex: 20,
+              }}>
+                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 2 }}>TIME SAVED PER RESUME</div>
+                <div style={{ fontSize: 22, fontWeight: 900, color: "#FF6B35" }}>87% Faster</div>
+                <div style={{
+                  height: 4, borderRadius: 4, marginTop: 8,
+                  background: "linear-gradient(90deg, #FF6B35, #FFB347)",
+                  width: "100%", boxShadow: "0 0 10px rgba(255,107,53,0.5)",
+                }} />
+              </div>
+
+              {/* ── Floating Badge 4 (Bottom-Right): Activity ── */}
+              <div style={{
+                position: "absolute", bottom: "-25px", right: "-45px",
+                background: "rgba(15, 17, 32, 0.85)", border: "1px solid rgba(255,255,255,0.12)",
+                borderRadius: 16, padding: "12px 16px", backdropFilter: "blur(16px)",
+                boxShadow: "0 16px 36px rgba(0,0,0,0.5)",
+                animation: "floatBadgeSlow 7s 1.5s ease-in-out infinite",
+                minWidth: 170, zIndex: 20,
+              }}>
+                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 8 }}>LIVE ACTIVITY</div>
+                {[
+                  { text: "Resume screened", time: "Just now", dot: "#FF6B35" },
+                  { text: "Interview scheduled", time: "2m ago", dot: "#6366f1" },
+                  { text: "Offer accepted", time: "8m ago", dot: "#22c55e" },
+                ].map((a, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <div style={{ width: 6, height: 6, borderRadius: "50%", background: a.dot, flexShrink: 0, boxShadow: `0 0 6px ${a.dot}` }} />
+                    <span style={{ fontSize: 11, color: "rgba(255,255,255,0.75)", fontWeight: 600, flex: 1 }}>{a.text}</span>
+                    <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)" }}>{a.time}</span>
+                  </div>
+                ))}
+              </div>
+
             </div>
 
           </div>
@@ -634,9 +687,21 @@ export default function Login({ onLogin }: LoginProps) {
         @keyframes spin {
           to { transform: rotate(360deg); }
         }
+        @keyframes floatMain {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-14px) rotate(0.5deg); }
+        }
         @keyframes floatBadge {
-          0%, 100% { transform: translateY(0px); }
-          50% { transform: translateY(-10px); }
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-10px) rotate(-1deg); }
+        }
+        @keyframes floatBadgeSlow {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-12px) rotate(1deg); }
+        }
+        @keyframes floatBadgeFast {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-8px) rotate(-0.5deg); }
         }
         @keyframes livePulse {
           0%, 100% { opacity: 1; transform: scale(1); box-shadow: 0 0 0 0 rgba(34,197,94,0.4); }
