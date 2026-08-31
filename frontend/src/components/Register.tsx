@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Zap, Mail, Lock, Building2, ArrowRight, Eye, EyeOff, Sparkles } from "lucide-react";
+import { Zap, Mail, Lock, Building2, ArrowRight, Eye, EyeOff, Sparkles, CheckCircle2 } from "lucide-react";
 import { authService, extractErrorMessage } from "../services/api";
 
 const PARTICLES = Array.from({ length: 28 }, (_, i) => ({
@@ -31,6 +31,7 @@ export default function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
   const [focused, setFocused] = useState<string | null>(null);
   const [mousePos, setMousePos] = useState({ x: 50, y: 50 });
   const leftRef = useRef<HTMLDivElement>(null);
@@ -53,9 +54,10 @@ export default function Register() {
     e.preventDefault();
     setLoading(true);
     setError("");
+    setSuccessMessage("");
     try {
       await authService.register(email, password, orgName);
-      navigate("/login", { state: { message: "Registration successful! Please sign in." } });
+      setSuccessMessage("Registration successful! You can now sign in.");
     } catch (err: any) {
       setError(extractErrorMessage(err, "Registration failed"));
     } finally {
@@ -572,6 +574,47 @@ export default function Register() {
                 </button>
               </div>
             </div>
+
+            {/* Success Message */}
+            {successMessage && (
+              <div style={{
+                padding: "14px 18px",
+                background: "rgba(34,197,94,0.1)",
+                border: "1px solid rgba(34,197,94,0.35)",
+                borderRadius: 12,
+                color: "#4ade80",
+                fontSize: 14,
+                fontWeight: 600,
+                display: "flex",
+                flexDirection: "column",
+                gap: 10,
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <CheckCircle2 size={20} color="#4ade80" style={{ flexShrink: 0 }} />
+                  <span>{successMessage}</span>
+                </div>
+                <Link
+                  to="/login"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    color: "white",
+                    background: "linear-gradient(135deg, #22c55e, #16a34a)",
+                    padding: "8px 16px",
+                    borderRadius: 8,
+                    textDecoration: "none",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    width: "fit-content",
+                    boxShadow: "0 2px 10px rgba(34,197,94,0.3)",
+                  }}
+                >
+                  Sign In Now
+                  <ArrowRight size={14} />
+                </Link>
+              </div>
+            )}
 
             {/* Error */}
             {error && (
