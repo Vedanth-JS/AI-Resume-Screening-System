@@ -11,6 +11,7 @@ env/
 *.pyd
 .pytest_cache/
 backend/resume_screening.db
+*.db
 backend/backend_output.log
 backend/backend_error.log
 

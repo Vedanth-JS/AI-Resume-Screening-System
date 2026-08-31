@@ -48,11 +48,18 @@ from .ats_models import (
 
 from .auth_models import (
     MFAProvider,
+    OAuthProvider,
+    DeviceType,
     SessionStatus,
     OAuthAccount,
     MFADevice,
     UserSession,
     APIKey,
+    AuthAuditLog,
+    LoginAttempt,
+    PasswordResetToken,
+    EmailVerificationToken,
+    OAuthState,
 )
 
 __all__ = [
@@ -66,6 +73,7 @@ __all__ = [
     "Department", "department_members", "PipelineStage", "CandidateNote",
     "ActivityLog", "Interview", "OfferLetter", "EmailTemplate",
     "TalentPool", "talent_pool_candidates", "RejectionReason", "BulkOperation",
-    "MFAProvider", "SessionStatus", "OAuthAccount", "MFADevice",
-    "UserSession", "APIKey",
+    "MFAProvider", "OAuthProvider", "DeviceType", "SessionStatus", "OAuthAccount", "MFADevice",
+    "UserSession", "APIKey", "AuthAuditLog", "LoginAttempt", "PasswordResetToken",
+    "EmailVerificationToken", "OAuthState",
 ]

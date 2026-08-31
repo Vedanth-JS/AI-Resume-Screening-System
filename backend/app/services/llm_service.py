@@ -428,7 +428,7 @@ Provide a concise assessment:
         Returns a JSON object describing exactly WHY a candidate scored the way they did.
         Falls back to rule-based reasoning if LLM is unavailable.
         """
-        if not _model:
+        if not settings.GOOGLE_API_KEY:
             return _generate_xai_fallback(score_breakdown, candidate_name, job_title)
 
         b = score_breakdown

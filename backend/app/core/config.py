@@ -93,11 +93,11 @@ class Settings(BaseSettings):
     SAML_SP_SLS_URL: str = "http://localhost:8080/api/auth/saml/sls"
 
     # ─── Password Policy ───────────────────────────────────────────────────
-    PASSWORD_MIN_LENGTH: int = 12
-    PASSWORD_REQUIRE_UPPER: bool = True
+    PASSWORD_MIN_LENGTH: int = 8
+    PASSWORD_REQUIRE_UPPER: bool = False
     PASSWORD_REQUIRE_LOWER: bool = True
-    PASSWORD_REQUIRE_DIGIT: bool = True
-    PASSWORD_REQUIRE_SPECIAL: bool = True
+    PASSWORD_REQUIRE_DIGIT: bool = False
+    PASSWORD_REQUIRE_SPECIAL: bool = False
     PASSWORD_MAX_HISTORY: int = 5
     PASSWORD_EXPIRY_DAYS: int = 0  # 0 = never expires
 

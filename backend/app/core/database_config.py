@@ -28,9 +28,27 @@ IDLE_IN_TRANSACTION_TIMEOUT_MS = int(os.getenv("DB_IDLE_IN_TRANSACTION_TIMEOUT_M
 
 
 import socket
+from ..core.logger import log
+
+def check_postgres_reachable(url: str) -> bool:
+    """Check if PostgreSQL database is reachable and accepting connections."""
+    try:
+        sync_url = url.replace("postgresql+asyncpg://", "postgresql://").replace("postgres+asyncpg://", "postgres://")
+        if "?ssl=require" in sync_url:
+            sync_url = sync_url.replace("?ssl=require", "?sslmode=require")
+        
+        from sqlalchemy import create_engine, text
+        test_engine = create_engine(sync_url, connect_args={"connect_timeout": 3})
+        with test_engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        test_engine.dispose()
+        return True
+    except Exception as e:
+        log.warning("postgres_connection_failed_fallback_sqlite", url=url, error=str(e))
+        return False
 
 def get_database_url() -> str:
-    """Build the database URL from settings or env vars."""
+    """Build the database URL from settings or env vars with auto-healing fallback."""
     url = os.getenv("DATABASE_URL", settings.DATABASE_URL)
 
     # Ensure asyncpg driver
@@ -45,6 +63,11 @@ def get_database_url() -> str:
             socket.gethostbyname("db")
         except socket.gaierror:
             url = url.replace("@db:", "@localhost:")
+
+    if "postgresql" in url or "postgres" in url:
+        if not check_postgres_reachable(url):
+            log.warning("database_fallback_sqlite_active")
+            return "sqlite+aiosqlite:///./ai_ats.db"
 
     return url
 

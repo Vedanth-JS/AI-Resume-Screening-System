@@ -165,6 +165,7 @@ def register_exception_handlers(app: FastAPI) -> None:
             content={
                 "error": "internal_error",
                 "message": "An unexpected error occurred. The incident has been logged.",
+                "detail": str(exc),
                 "request_id": getattr(request.state, "request_id", None),
             },
         )

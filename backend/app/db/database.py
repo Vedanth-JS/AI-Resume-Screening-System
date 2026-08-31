@@ -1,6 +1,6 @@
 import inspect
 from sqlalchemy import create_engine
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from sqlalchemy.pool import StaticPool
 from ..core.database_config import create_production_engine, get_database_url
@@ -56,31 +56,25 @@ class _SQLiteAsyncSessionFactory:
 
         return _Context()
 
-# ─── Production-Grade Engine ───────────────────────────────────────────────────
-# Uses tuned connection pool (20 base + 30 overflow), statement timeouts,
-# idle-in-transaction timeouts, JIT disabled for OLTP workloads.
+# ─── Engine Initialization ───────────────────────────────────────────────────
 database_url = get_database_url()
 
 if database_url.startswith("sqlite"):
-    sync_engine = create_engine(
+    async_engine = create_async_engine(
         database_url,
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    async_engine = _SQLiteEngineShim(database_url, sync_engine)
-    AsyncSessionLocal = _SQLiteAsyncSessionFactory(
-        sessionmaker(bind=sync_engine, expire_on_commit=False, autocommit=False, autoflush=False)
-    )
 else:
     async_engine = create_production_engine()
 
-    AsyncSessionLocal = async_sessionmaker(
-        bind=async_engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-        autocommit=False,
-        autoflush=False,
-    )
+AsyncSessionLocal = async_sessionmaker(
+    bind=async_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autocommit=False,
+    autoflush=False,
+)
 
 class Base(DeclarativeBase):
     pass

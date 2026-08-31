@@ -7,6 +7,10 @@
   },
   "rewrites": [
     {
+      "source": "/api/:path*",
+      "destination": "https://ai-ats-backend-yv1f.onrender.com/api/:path*"
+    },
+    {
       "source": "/((?!assets/)[^.]*)",
       "destination": "/index.html"
     },

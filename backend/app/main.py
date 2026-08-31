@@ -18,6 +18,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from fastapi import WebSocket, WebSocketDisconnect, Depends, Query
 from .db.database import AsyncSessionLocal
 from .models.models import User
+import app.models  # noqa: F401
 
 # ─── Bootstrap ────────────────────────────────────────────────────────────────
 configure_logging()
@@ -85,11 +86,27 @@ Instrumentator().instrument(app).expose(app)
 async def startup():
     log.info("ats_startup", version=settings.APP_VERSION, env=settings.APP_ENV)
     log.info("database_engine", url=str(async_engine.url))
+    try:
+        from .db.database import Base
+        import app.models.models  # noqa: F401
+        import app.models.auth_models  # noqa: F401
+        import app.models.ats_models  # noqa: F401
+        async with async_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
-@app.on_event("shutdown")
-async def shutdown():
-    log.info("ats_shutdown")
-    await async_engine.dispose()
+        # Ensure default roles exist
+        async with AsyncSessionLocal() as session:
+            from sqlalchemy import select
+            from .models.models import Role, RoleEnum
+            stmt = select(Role).where(Role.name == RoleEnum.RECRUITER)
+            res = await session.execute(stmt)
+            if not res.scalars().first():
+                for r in [RoleEnum.ADMIN, RoleEnum.RECRUITER, RoleEnum.VIEWER]:
+                    session.add(Role(name=r, permissions={}))
+                await session.commit()
+                log.info("default_roles_seeded")
+    except Exception as e:
+        log.error("startup_db_init_warning", error=str(e))
 
 # ─── Health Check ────────────────────────────────────────────────────────────
 @app.get("/api/health", tags=["System"])
