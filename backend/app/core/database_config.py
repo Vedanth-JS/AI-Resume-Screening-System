@@ -30,22 +30,33 @@ IDLE_IN_TRANSACTION_TIMEOUT_MS = int(os.getenv("DB_IDLE_IN_TRANSACTION_TIMEOUT_M
 import socket
 from ..core.logger import log
 
+import asyncio
+import concurrent.futures
+
 def check_postgres_reachable(url: str) -> bool:
-    """Check if PostgreSQL database is reachable and accepting connections."""
+    """Check if PostgreSQL database is reachable and accepting asyncpg connections."""
+    async def _test():
+        try:
+            import asyncpg
+            clean_url = url.replace("postgresql+asyncpg://", "postgresql://").replace("postgres+asyncpg://", "postgres://")
+            conn = await asyncio.wait_for(asyncpg.connect(clean_url, statement_cache_size=0), timeout=3.0)
+            await conn.execute("SELECT 1")
+            await conn.close()
+            return True
+        except Exception as e:
+            log.warning("postgres_connection_failed_fallback_sqlite", url=url, error=str(e))
+            return False
+
     try:
-        sync_url = url.replace("postgresql+asyncpg://", "postgresql://").replace("postgres+asyncpg://", "postgres://")
-        if "?ssl=require" in sync_url:
-            sync_url = sync_url.replace("?ssl=require", "?sslmode=require")
-        
-        from sqlalchemy import create_engine, text
-        test_engine = create_engine(sync_url, connect_args={"connect_timeout": 3})
-        with test_engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        test_engine.dispose()
-        return True
-    except Exception as e:
-        log.warning("postgres_connection_failed_fallback_sqlite", url=url, error=str(e))
-        return False
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(lambda: asyncio.run(_test())).result(timeout=5.0)
+    else:
+        return asyncio.run(_test())
 
 def get_database_url() -> str:
     """Build the database URL from settings or env vars with auto-healing fallback."""
