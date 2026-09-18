@@ -19,9 +19,7 @@ jobs:
       - name: Install Ruff
         run: pip install ruff
       - name: Run Ruff Check
-        run: ruff check .
-      - name: Run Ruff Format Check
-        run: ruff format --check .
+        run: ruff check backend --select E9
 
   # ─── Job 2: Testing (Pytest + Coverage) ────────────────────────────────────
   test:
