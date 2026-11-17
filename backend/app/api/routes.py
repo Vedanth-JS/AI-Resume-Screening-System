@@ -24,16 +24,26 @@ from ..models.models import BatchStatus
 from ..schemas import schemas
 from ..core.pipeline import ATSWorkflow
 from ..embeddings.search import SemanticSearch
-from ..core.auth_dependencies import ViewerOnly, RecruiterOnly, AdminOnly, get_current_user
+from ..core.auth_dependencies import ViewerOnly, RecruiterOnly, AdminOnly, get_current_user, get_current_user_hybrid
 from ..services.feedback_service import FeedbackService
 from ..services.rag_service import RAGService
 from ..services.llm_service import LLMService
 from ..core.bias_detector import BiasDetector
+from ..core.ats_scoring_engine import ATSScoringEngine
+from ..core.parser import ResumeParser
+from ..schemas.ats_engine import (
+    ATSScoreResponse,
+    ATSScoreRequest,
+    BulkScreenResponse,
+    CandidateScreeningResult,
+    CustomJDConfig,
+    ATSCriteriaWeights,
+)
 from ..workers.tasks.screening import screen_resume
 from ..workers.tasks.batch import process_batch
 from ..core.logger import log
 from ..core.config import settings
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 router = APIRouter()
 workflow = ATSWorkflow()
@@ -267,6 +277,17 @@ async def upload_resume(
             rag = RAGService(fresh_db)
             await rag.index_candidate(candidate)
             await fresh_db.commit()
+
+            # Enrich result with robust ATS Scoring Engine evaluation
+            try:
+                ats_eval = ATSScoringEngine.score(
+                    resume_text=cand_data.get("raw_text", ""),
+                    job_description=job.description,
+                    job_role=job.title,
+                )
+                result["ats_scoring"] = ats_eval.model_dump()
+            except Exception as score_err:
+                log.warning("ats_scoring_enrichment_failed", error=str(score_err))
 
             return {
                 "success": True,
@@ -971,4 +992,379 @@ async def get_pipeline(
         "stages": stages,
         "total": sum(len(v) for v in stages.values()),
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ATS Scoring Engine Endpoints
+# ═══════════════════════════════════════════════════════════════════════════════
+
+async def OptionalUser(request: Request, db: AsyncSession = Depends(get_db)):
+    """Graceful auth fallback: recognizes authenticated user without blocking unauthenticated requests."""
+    try:
+        return await get_current_user_hybrid(request, db)
+    except Exception:
+        return None
+
+
+@router.post(
+    "/ats/score",
+    response_model=ATSScoreResponse,
+    summary="Evaluate resume with deterministic-plus-semantic ATS scoring engine",
+    description=(
+        "Evaluates candidate resume text against an explicit Job Description or "
+        "dynamically inferred Job Role Title benchmarks across 4 weighted components."
+    ),
+    tags=["ATS Scoring Engine"],
+)
+async def score_resume_endpoint(
+    payload: ATSScoreRequest,
+    current_user=Depends(OptionalUser),
+):
+    """Calculates comprehensive ATS score matching the required JSON schema."""
+    return ATSScoringEngine.score(
+        resume_text=payload.resume_text,
+        job_description=payload.job_description,
+        job_role=payload.job_role,
+        parsed_resume=payload.parsed_resume,
+    )
+
+
+@router.post(
+    "/ats/score-file",
+    response_model=ATSScoreResponse,
+    summary="Upload resume file and evaluate with ATS scoring engine",
+    description="Upload a PDF/DOCX/TXT file to evaluate against a Job Description or Job Role.",
+    tags=["ATS Scoring Engine"],
+)
+async def score_resume_file_endpoint(
+    file: UploadFile = File(...),
+    job_description: Optional[str] = Form(default=None),
+    job_role: Optional[str] = Form(default=None),
+    current_user=Depends(OptionalUser),
+):
+    """Extracts raw text from uploaded resume file and scores it."""
+    allowed_exts = (".pdf", ".docx", ".doc", ".txt")
+    if not any(file.filename.lower().endswith(ext) for ext in allowed_exts):
+        raise HTTPException(400, f"Supported file formats: {', '.join(allowed_exts)}")
+
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(400, "File size exceeds 10MB limit")
+
+    raw_text = ResumeParser.extract_text(content, file.filename)
+    return ATSScoringEngine.score(
+        resume_text=raw_text,
+        job_description=job_description,
+        job_role=job_role,
+    )
+
+
+@router.get(
+    "/ats/roles",
+    summary="Get list of predefined ATS job roles",
+    description="Returns the 16 industry-standard predefined job roles supported by the ATS engine.",
+    tags=["ATS Scoring Engine"],
+)
+async def get_predefined_roles_endpoint():
+    from ..core.role_inferrer import PREDEFINED_ROLES
+    return {"roles": PREDEFINED_ROLES}
+
+
+@router.post(
+    "/ats/bulk-screen",
+    response_model=BulkScreenResponse,
+    summary="Bulk screen up to 50 resumes simultaneously",
+    description=(
+        "Processes up to 50 resumes against a predefined role (Option A) or "
+        "custom Job Description (Option B) with configurable weights and strict extraction checks."
+    ),
+    tags=["ATS Scoring Engine"],
+)
+async def bulk_screen_endpoint(
+    files: List[UploadFile] = File(...),
+    job_role: Optional[str] = Form(default=None),
+    job_description: Optional[str] = Form(default=None),
+    custom_jd: Optional[str] = Form(default=None),
+    weights: Optional[str] = Form(default=None),
+    current_user=Depends(OptionalUser),
+):
+    import json
+    if len(files) > 50:
+        raise HTTPException(400, "Maximum 50 resumes can be screened simultaneously.")
+
+    parsed_custom_jd = None
+    if custom_jd:
+        try:
+            jd_dict = json.loads(custom_jd)
+            parsed_custom_jd = CustomJDConfig(**jd_dict)
+        except Exception as e:
+            log.warning("failed_to_parse_custom_jd_json", error=str(e))
+
+    parsed_weights = None
+    if weights:
+        try:
+            w_dict = json.loads(weights)
+            parsed_weights = ATSCriteriaWeights(**w_dict)
+        except Exception as e:
+            log.warning("failed_to_parse_weights_json", error=str(e))
+
+    file_items = []
+    for f in files:
+        b = await f.read()
+        file_items.append((f.filename, b))
+
+    results = ATSScoringEngine.evaluate_bulk(
+        file_items=file_items,
+        job_role=job_role,
+        job_description=job_description,
+        custom_jd=parsed_custom_jd,
+        weights=parsed_weights,
+    )
+
+    successful = [r for r in results if r.status == "COMPLETED" and r.overall_ats_score is not None]
+    errors = [r for r in results if r.status == "ERROR"]
+    avg_score = round(sum(r.overall_ats_score for r in successful) / len(successful), 1) if successful else 0.0
+
+    role_used = (
+        parsed_custom_jd.title if parsed_custom_jd and parsed_custom_jd.title
+        else (job_role or "Software Engineer")
+    )
+    input_mode = "job_description" if (parsed_custom_jd or (job_description and len(job_description.strip()) >= 50)) else "inferred_role"
+
+    return BulkScreenResponse(
+        job_role_used=role_used,
+        input_mode_used=input_mode,
+        total_processed=len(results),
+        successful_count=len(successful),
+        error_count=len(errors),
+        average_score=avg_score,
+        candidates=results,
+    )
+
+
+@router.post(
+    "/ats/rescore",
+    response_model=BulkScreenResponse,
+    summary="Instantly re-evaluate already parsed resumes against updated job requirements",
+    description="Allows recruiters to change the target role or custom JD and re-score candidates without re-uploading files.",
+    tags=["ATS Scoring Engine"],
+)
+async def rescore_candidates_endpoint(
+    payload: Dict[str, Any] = Body(...),
+    current_user=Depends(OptionalUser),
+):
+    candidates_data = payload.get("candidates", [])
+    job_role = payload.get("job_role")
+    job_description = payload.get("job_description")
+    custom_jd_dict = payload.get("custom_jd")
+    weights_dict = payload.get("weights")
+
+    parsed_custom_jd = CustomJDConfig(**custom_jd_dict) if custom_jd_dict else None
+    parsed_weights = ATSCriteriaWeights(**weights_dict) if weights_dict else None
+
+    rescored_candidates: List[CandidateScreeningResult] = []
+
+    for item in candidates_data:
+        cand_id = item.get("id") or str(uuid.uuid4())[:8]
+        filename = item.get("file_name") or "resume.pdf"
+        file_size = item.get("file_size") or 0
+        raw_text = item.get("candidate", {}).get("raw_text") or item.get("raw_text") or ""
+
+        if not raw_text.strip():
+            empty_profile = ParsedCandidateProfile(name=filename, raw_text="")
+            rescored_candidates.append(
+                CandidateScreeningResult(
+                    id=cand_id,
+                    rank=len(rescored_candidates) + 1,
+                    candidate=empty_profile,
+                    overall_ats_score=None,
+                    match_tier=None,
+                    status="ERROR",
+                    extraction_error="Extraction Error: No text available for re-scoring.",
+                    file_name=filename,
+                    file_size=file_size,
+                )
+            )
+            continue
+
+        try:
+            eval_res = ATSScoringEngine.score(
+                resume_text=raw_text,
+                job_description=job_description,
+                job_role=job_role,
+                custom_jd=parsed_custom_jd,
+                weights=parsed_weights,
+            )
+            cand_profile = ATSScoringEngine.extract_candidate_profile(raw_text, filename)
+            rescored_candidates.append(
+                CandidateScreeningResult(
+                    id=cand_id,
+                    rank=1,
+                    candidate=cand_profile,
+                    overall_ats_score=eval_res.overall_ats_score,
+                    match_tier=eval_res.match_tier,
+                    recommendation=eval_res.recommendation,
+                    breakdown=eval_res.breakdown,
+                    skill_gap_analysis=eval_res.skill_gap_analysis,
+                    keyword_analysis=eval_res.keyword_analysis,
+                    strengths=eval_res.strengths,
+                    weaknesses=eval_res.weaknesses,
+                    actionable_improvements=eval_res.actionable_improvements,
+                    status="COMPLETED",
+                    extraction_error=None,
+                    file_name=filename,
+                    file_size=file_size,
+                )
+            )
+        except Exception as err:
+            rescored_candidates.append(
+                CandidateScreeningResult(
+                    id=cand_id,
+                    rank=len(rescored_candidates) + 1,
+                    candidate=ParsedCandidateProfile(name=filename, raw_text=raw_text[:200]),
+                    overall_ats_score=None,
+                    match_tier=None,
+                    status="ERROR",
+                    extraction_error=f"Re-scoring error: {str(err)}",
+                    file_name=filename,
+                    file_size=file_size,
+                )
+            )
+
+    rescored_candidates.sort(
+        key=lambda x: (x.status == "COMPLETED", x.overall_ats_score or 0),
+        reverse=True,
+    )
+    for i, item in enumerate(rescored_candidates):
+        item.rank = i + 1
+
+    successful = [r for r in rescored_candidates if r.status == "COMPLETED" and r.overall_ats_score is not None]
+    errors = [r for r in rescored_candidates if r.status == "ERROR"]
+    avg_score = round(sum(r.overall_ats_score for r in successful) / len(successful), 1) if successful else 0.0
+
+    role_used = (
+        parsed_custom_jd.title if parsed_custom_jd and parsed_custom_jd.title
+        else (job_role or "Software Engineer")
+    )
+    input_mode = "job_description" if (parsed_custom_jd or (job_description and len(job_description.strip()) >= 50)) else "inferred_role"
+
+    return BulkScreenResponse(
+        job_role_used=role_used,
+        input_mode_used=input_mode,
+        total_processed=len(rescored_candidates),
+        successful_count=len(successful),
+        error_count=len(errors),
+        average_score=avg_score,
+        candidates=rescored_candidates,
+    )
+
+
+@router.post(
+    "/ats/export-csv",
+    summary="Export candidate screening results to CSV",
+    tags=["ATS Scoring Engine"],
+)
+async def export_candidates_csv_endpoint(
+    candidates: List[Dict[str, Any]] = Body(...),
+    current_user=Depends(OptionalUser),
+):
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "Rank", "Candidate Name", "Email", "Phone", "ATS Score",
+        "Match Tier", "Recommendation", "Experience (Years)",
+        "Education", "College", "Top Skills", "Status"
+    ])
+
+    for c in candidates:
+        profile = c.get("candidate", {})
+        rec = c.get("recommendation", {})
+        writer.writerow([
+            c.get("rank", ""),
+            profile.get("name", "Candidate"),
+            profile.get("email", ""),
+            profile.get("phone", ""),
+            c.get("overall_ats_score", "N/A"),
+            c.get("match_tier", ""),
+            rec.get("verdict", c.get("status", "")),
+            profile.get("work_experience_years", ""),
+            profile.get("education", ""),
+            profile.get("college", ""),
+            ", ".join(profile.get("technical_skills", [])[:6]),
+            c.get("status", ""),
+        ])
+
+    output.seek(0)
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode("utf-8")),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=ats_screening_results.csv"},
+    )
+
+
+@router.post(
+    "/ats/export-excel",
+    summary="Export candidate screening results to Excel (.xlsx)",
+    tags=["ATS Scoring Engine"],
+)
+async def export_candidates_excel_endpoint(
+    candidates: List[Dict[str, Any]] = Body(...),
+    current_user=Depends(OptionalUser),
+):
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Screening Results"
+
+    headers = [
+        "Rank", "Candidate Name", "Email", "Phone", "ATS Score",
+        "Match Tier", "Recommendation", "Experience (Yrs)",
+        "Education", "College", "Top Skills", "File Name", "Status"
+    ]
+    ws.append(headers)
+
+    header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="F97316", end_color="F97316", fill_type="solid")
+    for cell in ws[1]:
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+    for c in candidates:
+        profile = c.get("candidate", {})
+        rec = c.get("recommendation", {})
+        ws.append([
+            c.get("rank", ""),
+            profile.get("name", "Candidate"),
+            profile.get("email", ""),
+            profile.get("phone", ""),
+            c.get("overall_ats_score") if c.get("overall_ats_score") is not None else "N/A",
+            c.get("match_tier", ""),
+            rec.get("verdict", c.get("status", "")),
+            profile.get("work_experience_years", 0),
+            profile.get("education", ""),
+            profile.get("college", ""),
+            ", ".join(profile.get("technical_skills", [])[:6]),
+            c.get("file_name", ""),
+            c.get("status", ""),
+        ])
+
+    for col in ws.columns:
+        max_len = max(len(str(cell.value or "")) for cell in col)
+        col_letter = openpyxl.utils.get_column_letter(col[0].column)
+        ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=ats_screening_results.xlsx"},
+    )
+
+
 

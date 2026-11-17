@@ -284,3 +284,50 @@ async def test_get_candidates_empty(client, auth_token):
     assert isinstance(data, dict)
     assert "items" in data
     assert isinstance(data["items"], list)
+
+
+# ─── ATS Scoring Engine Endpoints ────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_ats_score_endpoint_inferred_role(client, auth_token):
+    """Test POST /api/ats/score with inferred role fallback."""
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    payload = {
+        "resume_text": "Alice Smith\nalice@example.com | 555-0100\nEXPERIENCE\nSenior Backend Engineer (2018 - Present)\n• Built Python FastAPI microservices serving 10M users with 99.9% uptime.\nSKILLS\nPython, FastAPI, Docker, PostgreSQL\nEDUCATION\nBS Computer Science",
+        "job_description": "",
+        "job_role": "Backend Software Engineer",
+    }
+    resp = await client.post("/api/ats/score", json=payload, headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert data["input_mode_used"] == "inferred_role"
+    assert "overall_ats_score" in data
+    assert "breakdown" in data
+    assert "keyword_analysis" in data
+    assert "strengths" in data
+    assert "critical_gaps" in data
+    assert "actionable_improvements" in data
+    assert 0 <= data["overall_ats_score"] <= 100
+    assert "technical_skills_score" in data["breakdown"]
+    assert "jd_relevance_score" in data["breakdown"]
+    assert "relevant_experience_score" in data["breakdown"]
+
+
+@pytest.mark.asyncio
+async def test_ats_score_endpoint_explicit_jd(client, auth_token):
+    """Test POST /api/ats/score with explicit JD."""
+    headers = {"Authorization": f"Bearer {auth_token}"}
+    payload = {
+        "resume_text": "Bob\nbob@test.com\nEXPERIENCE\nDeveloper (2020 - 2023)\n• Developed REST APIs with Python.\nSKILLS\nPython, SQL",
+        "job_description": "We are seeking a Backend Developer with 3+ years of experience. Must have: Python, Docker, Kubernetes, PostgreSQL.",
+        "job_role": "Backend Developer",
+    }
+    resp = await client.post("/api/ats/score", json=payload, headers=headers)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert data["input_mode_used"] == "job_description"
+    assert "Match" in data["match_tier"]
+
+

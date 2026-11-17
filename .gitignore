@@ -32,3 +32,5 @@ test_data/
 vite.config.js.timestamp-*
 backend/vector_db/
 *.log
+
+.vercel

@@ -178,7 +178,40 @@ export const atsService = {
   advanceStage: (applicationId, newStage, notes = '') => 
     api.post('/v2/ats/pipeline/advance', { application_id: applicationId, new_stage: newStage, notes }),
   rejectCandidate: (applicationId, reasonId = null, notes = '') => 
-    api.post('/v2/ats/reject', { application_id: applicationId, reason_id: reasonId, notes }),
+    api.post('/v2/ats/pipeline/reject', { application_id: applicationId, reason_id: reasonId, notes }),
+};
+
+// ─── Advanced ATS Scoring & Bulk Screening Engine ───────────────────────────
+export const atsScoringService = {
+  getRoles: () => api.get('/ats/roles'),
+  score: (payload) => api.post('/ats/score', payload),
+  scoreFile: (file, jobDescription, jobRole) => {
+    const form = new FormData();
+    form.append('file', file);
+    if (jobDescription) form.append('job_description', jobDescription);
+    if (jobRole) form.append('job_role', jobRole);
+    return api.post('/ats/score-file', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
+  bulkScreen: (files, jobRole, jobDescription, customJd, weights) => {
+    const form = new FormData();
+    files.forEach((f) => form.append('files', f));
+    if (jobRole) form.append('job_role', jobRole);
+    if (jobDescription) form.append('job_description', jobDescription);
+    if (customJd) form.append('custom_jd', typeof customJd === 'string' ? customJd : JSON.stringify(customJd));
+    if (weights) form.append('weights', typeof weights === 'string' ? weights : JSON.stringify(weights));
+    return api.post('/ats/bulk-screen', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+  },
+  rescore: (candidates, jobRole, jobDescription, customJd, weights) => {
+    return api.post('/ats/rescore', {
+      candidates,
+      job_role: jobRole,
+      job_description: jobDescription,
+      custom_jd: customJd,
+      weights,
+    });
+  },
+  exportCsv: (candidates) => api.post('/ats/export-csv', candidates, { responseType: 'blob' }),
+  exportExcel: (candidates) => api.post('/ats/export-excel', candidates, { responseType: 'blob' }),
 };
 
 // ─── Pipeline Kanban ─────────────────────────────────────────────────────────

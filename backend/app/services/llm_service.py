@@ -239,8 +239,6 @@ def _call_model_sync(prompt: str) -> str:
 
 async def _call_model(prompt: str, context: str = "") -> str:
     """Async Gemini call with fast fallback."""
-    if _API_DISABLED or not settings.GOOGLE_API_KEY:
-        return ""
     import asyncio
     try:
         loop = asyncio.get_running_loop()
@@ -262,8 +260,6 @@ class GeminiService:
     async def extract_resume_data(text: str) -> Dict[str, Any]:
         """Agent 1 — Resume Parser with fast fallback."""
         from ..core.parser import ResumeParser
-        if _API_DISABLED or not settings.GOOGLE_API_KEY:
-            return ResumeParser.parse_resume_fallback(text)
 
         prompt = f"""You are an expert resume parser. Extract structured data from the resume text.
 
@@ -312,16 +308,6 @@ Return ONLY valid JSON with the same keys as the example. Include a "confidence"
     @staticmethod
     async def analyze_jd(jd_text: str) -> Dict[str, Any]:
         """Agent 2 — JD Analyzer. Extracts structured JD profile."""
-        if _API_DISABLED or not settings.GOOGLE_API_KEY:
-            lines = [l.strip() for l in jd_text.splitlines() if l.strip()]
-            return {
-                "role_title": lines[0][:60] if lines else "Target Position",
-                "seniority_level": "mid",
-                "must_have_skills": [],
-                "nice_to_have_skills": [],
-                "required_experience_years": 0,
-            }
-
         prompt = f"""
 You are a Job Description analyst. Analyze the JD below and return ONLY a JSON object:
 {{
