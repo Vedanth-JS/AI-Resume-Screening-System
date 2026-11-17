@@ -60,11 +60,19 @@ class _SQLiteAsyncSessionFactory:
 database_url = get_database_url()
 
 if database_url.startswith("sqlite"):
-    async_engine = create_async_engine(
-        database_url,
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    connect_args = {"check_same_thread": False}
+    if ":memory:" in database_url:
+        async_engine = create_async_engine(
+            database_url,
+            connect_args=connect_args,
+            poolclass=StaticPool,
+        )
+    else:
+        async_engine = create_async_engine(
+            database_url,
+            connect_args=connect_args,
+            pool_pre_ping=True,
+        )
 else:
     async_engine = create_production_engine()
 

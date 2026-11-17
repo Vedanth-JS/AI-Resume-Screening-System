@@ -104,8 +104,24 @@ def get_cors_config() -> dict:
     else:
         origins = list(raw_origins)
 
+    dev_origins = [
+        "http://localhost:8081",
+        "http://127.0.0.1:8081",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ]
     if origins == ["*"]:
-        origins = ["http://localhost:3000", "http://localhost:4173"]
+        origins = list(dev_origins)
+    else:
+        for dev_o in dev_origins:
+            if dev_o not in origins:
+                origins.append(dev_o)
 
     # Always ensure the Vercel production frontend is allowed programmatically
     vercel_origin = "https://ai-resume-screening-system-sooty.vercel.app"
@@ -114,14 +130,12 @@ def get_cors_config() -> dict:
 
     return {
         "allow_origins": origins,
+        "allow_origin_regex": r"https?://(localhost|127\.0\.0\.1)(:[0-9]+)?|https://.*\.vercel\.app",
         "allow_credentials": True,
-        "allow_methods": ["GET", "POST", "PUT", "DELETE", "PATCH"],
-        "allow_headers": [
-            "Authorization", "Content-Type", "X-Request-ID",
-            "X-API-Key", "X-Device-Name", "X-CSRF-Token",
-        ],
-        "expose_headers": ["X-Request-ID", "X-RateLimit-Remaining"],
-        "max_age": 600,  # 10 minutes
+        "allow_methods": ["*"],
+        "allow_headers": ["*"],
+        "expose_headers": ["*"],
+        "max_age": 86400,
     }
 
 

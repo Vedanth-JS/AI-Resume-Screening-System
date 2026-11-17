@@ -34,23 +34,12 @@ app = FastAPI(
 register_exception_handlers(app)
 
 # ─── Middleware ────────────────────────────────────────────────────────────────
-# CORS: restrict in production, allow all in dev
-if settings.APP_ENV == "production":
-    cors_origins = getattr(settings, "CORS_ORIGINS", ["*"])
-else:
-    cors_origins = ["*"]
-
 # Security headers MUST be first (outermost)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(CSPMiddleware)
 
-# CORS with production-safe configuration
-cors_config = get_cors_config() if settings.APP_ENV == "production" else {
-    "allow_origins": ["*"],
-    "allow_credentials": True,
-    "allow_methods": ["GET", "POST", "PUT", "DELETE", "PATCH"],
-    "allow_headers": ["Authorization", "Content-Type", "X-API-Key", "X-Device-Name"],
-}
+# CORS with production-safe and dev-friendly configuration
+cors_config = get_cors_config()
 app.add_middleware(CORSMiddleware, **cors_config)
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
@@ -228,4 +217,4 @@ async def websocket_endpoint(websocket: WebSocket, token: str = Query(...)):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8080, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

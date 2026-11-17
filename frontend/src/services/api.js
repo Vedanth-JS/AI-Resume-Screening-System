@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || 'https://ai-ats-backend-yv1f.onrender.com/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_API_BASE_URL || '/api';
 
 const api = axios.create({ baseURL: API_BASE_URL });
 
@@ -10,7 +10,11 @@ api.interceptors.request.use(
     // Resolve Axios leading slash issue with baseURL subpaths (e.g. /api)
     if (config.url && config.url.startsWith('/') && config.baseURL) {
       const base = config.baseURL.endsWith('/') ? config.baseURL.slice(0, -1) : config.baseURL;
-      config.url = base + config.url;
+      if (config.url.startsWith(base)) {
+        config.url = config.url;
+      } else {
+        config.url = base + config.url;
+      }
       config.baseURL = undefined;
     }
     const token = localStorage.getItem('token');
@@ -66,7 +70,8 @@ export const authService = {
       email,
       password,
       organization_name: orgName,
-      organization_slug: email.split('@')[0].replace('.', '-')
+      organization_slug: email.split('@')[0].replace('.', '-'),
+      full_name: orgName || email.split('@')[0]
     });
     return res.data;
   },

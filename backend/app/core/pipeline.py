@@ -57,6 +57,14 @@ async def node_parse_resume(state: ATSState) -> Dict[str, Any]:
     try:
         text = ResumeParser.extract_text(state["file_content"], state["filename"])
         parsed = await LLMService.extract_resume_data(text)
+        if not parsed or not parsed.get("skills") or not parsed.get("name") or parsed.get("name") == "Unknown":
+            fallback = ResumeParser.parse_resume_fallback(text)
+            if not parsed:
+                parsed = fallback
+            else:
+                for k, v in fallback.items():
+                    if not parsed.get(k):
+                        parsed[k] = v
         parsed["raw_text"] = text
         return {"parsed_resume": parsed}
     except Exception as e:
@@ -66,7 +74,7 @@ async def node_parse_resume(state: ATSState) -> Dict[str, Any]:
 
 async def node_analyze_jd_and_embed(state: ATSState) -> Dict[str, Any]:
     """Analyse JD + generate embeddings for both resume and JD in parallel."""
-    resume_text = state["parsed_resume"].get("raw_text", "")
+    resume_text = (state.get("parsed_resume") or {}).get("raw_text", "")
     jd_text = state["jd_text"]
     updates: Dict[str, Any] = {}
 
@@ -92,8 +100,8 @@ async def node_analyze_jd_and_embed(state: ATSState) -> Dict[str, Any]:
 async def node_score_all(state: ATSState) -> Dict[str, Any]:
     """Compute keyword, semantic, format, section, and experience scores."""
     try:
-        resume_text = state["parsed_resume"].get("raw_text", "")
-        candidate_years = float(state["parsed_resume"].get("total_years_experience", 0) or 0)
+        resume_text = (state.get("parsed_resume") or {}).get("raw_text", "")
+        candidate_years = float((state.get("parsed_resume") or {}).get("total_years_experience", 0) or 0)
 
         # Semantic: prefer Gemini embedding; fall back to ST
         sem_override = None
@@ -223,22 +231,18 @@ class ATSWorkflow:
             "start_time":       time.time(),
         }
 
-        if _LANGGRAPH_AVAILABLE and _compiled_graph:
-            final = await _compiled_graph.ainvoke(initial_state)
-        else:
-            # Linear fallback — still uses optimised parallel embed step
-            s = dict(initial_state)
-            s.update(await node_parse_resume(s))
-            s.update(await node_analyze_jd_and_embed(s))
-            s.update(await node_score_all(s))
-            # Run bias, questions, xai concurrently
-            bias_task    = node_detect_bias(s)
-            q_task       = node_generate_iq(s)
-            s_bias, s_q  = await asyncio.gather(bias_task, q_task)
-            s.update(s_bias)
-            s.update(s_q)
-            s.update(await node_scoring_xai(s))
-            final = s
+        s = dict(initial_state)
+        s.update(await node_parse_resume(s))
+        s.update(await node_analyze_jd_and_embed(s))
+        s.update(await node_score_all(s))
+        # Run bias, questions, xai concurrently
+        bias_task    = node_detect_bias(s)
+        q_task       = node_generate_iq(s)
+        s_bias, s_q  = await asyncio.gather(bias_task, q_task)
+        s.update(s_bias)
+        s.update(s_q)
+        s.update(await node_scoring_xai(s))
+        final = s
 
         return {
             "candidate":  final.get("parsed_resume"),

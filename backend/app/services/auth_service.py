@@ -141,6 +141,12 @@ class EnterpriseAuthService:
         if existing:
             raise AuthError("An account with this email already exists", 409)
 
+        # Ensure org_slug is unique to prevent database constraint errors
+        stmt = select(Organization).where(Organization.slug == org_slug)
+        existing_org = (await self.db.execute(stmt)).scalars().first()
+        if existing_org:
+            org_slug = f"{org_slug}-{secrets.token_hex(3)}"
+
         org = Organization(name=org_name, slug=org_slug)
         self.db.add(org)
         await self.db.flush()
@@ -380,6 +386,12 @@ class EnterpriseAuthService:
         if not user:
             org_name = attributes.get("organization", f"SAML User")
             org_slug = attributes.get("org_slug", email.split("@")[0])
+            # Ensure org_slug is unique to prevent database constraint errors
+            stmt = select(Organization).where(Organization.slug == org_slug)
+            existing_org = (await self.db.execute(stmt)).scalars().first()
+            if existing_org:
+                org_slug = f"{org_slug}-{secrets.token_hex(3)}"
+
             org = Organization(name=org_name, slug=org_slug)
             self.db.add(org)
             await self.db.flush()

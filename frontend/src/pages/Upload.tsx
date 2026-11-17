@@ -72,10 +72,10 @@ export default function UploadPage() {
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     const validFiles = acceptedFiles.filter(file => {
-      // Validate file type
-      if (!file.name.toLowerCase().endsWith('.pdf')) {
-        return false;
-      }
+      // Validate file type (PDF, DOCX, DOC, TXT)
+      const name = file.name.toLowerCase();
+      const isValid = name.endsWith('.pdf') || name.endsWith('.docx') || name.endsWith('.doc') || name.endsWith('.txt');
+      if (!isValid) return false;
       // Validate file size (10MB)
       if (file.size > 10 * 1024 * 1024) {
         return false;
@@ -97,7 +97,12 @@ export default function UploadPage() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({ 
     onDrop,
-    accept: { 'application/pdf': ['.pdf'] },
+    accept: {
+      'application/pdf': ['.pdf'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+      'application/msword': ['.doc'],
+      'text/plain': ['.txt']
+    },
     maxFiles: 50
   });
 
@@ -251,9 +256,27 @@ export default function UploadPage() {
               ))}
             </select>
           ) : (
-            <p className="text-sm text-amber-500 font-medium">
-              No jobs found. Create a job posting first, then return here to screen resumes.
-            </p>
+            <div className="space-y-3">
+              <p className="text-sm text-amber-500 font-medium">
+                No jobs found. Create a job posting first, then return here to screen resumes.
+              </p>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const res = await jobService.getJobs();
+                    const items = res.data?.items ?? (Array.isArray(res.data) ? res.data : []);
+                    if (items.length > 0) {
+                      setJobs(items);
+                      setSelectedJobId(String(items[0].id));
+                    }
+                  } catch (e) {}
+                }}
+                className="px-4 py-2 bg-primary/10 text-primary border border-primary/30 rounded-xl text-xs font-bold hover:bg-primary/20 transition-all"
+              >
+                + Load Starter Job Postings
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -273,7 +296,7 @@ export default function UploadPage() {
           </div>
           <div className="space-y-2">
             <p className="text-xl font-bold font-display">Drag & Drop Resumes</p>
-            <p className="text-xs text-muted-foreground font-medium italic underline decoration-muted-foreground/30 underline-offset-4">Supports original PDF files only (Max 10MB each)</p>
+            <p className="text-xs text-muted-foreground font-medium italic underline decoration-muted-foreground/30 underline-offset-4">Supports PDF, DOCX, DOC, and TXT files (Max 10MB each)</p>
           </div>
           <button className="px-8 py-3 bg-primary text-primary-foreground rounded-full text-xs font-black uppercase tracking-widest shadow-xl shadow-primary/20 hover:-translate-y-1 transition-all">Select Files</button>
         </div>

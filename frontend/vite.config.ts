@@ -29,14 +29,14 @@ export default defineConfig({
     chunkSizeWarningLimit: 800,
   },
   server: {
-    port: 4173,
+    port: 8081,
     proxy: {
       '/api': {
-        target: 'http://localhost:80',
+        target: 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://localhost:80',
+        target: 'ws://127.0.0.1:8000',
         ws: true,
       },
     },

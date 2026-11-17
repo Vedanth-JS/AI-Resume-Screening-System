@@ -20,11 +20,12 @@ async def run_alembic_upgrade():
         env = os.environ.copy()
         env["PYTHONPATH"] = os.path.dirname(os.path.abspath(__file__))
         result = subprocess.run(
-            ["alembic", "upgrade", "head"],
+            [sys.executable, "-m", "alembic", "upgrade", "head"],
             capture_output=True, 
             text=True,
             check=True,
-            env=env
+            env=env,
+            timeout=30,
         )
         print(f"✅ Alembic Success: {result.stdout}")
         return True
@@ -38,14 +39,24 @@ async def run_alembic_upgrade():
 async def init_db():
     print("🚀 Antigravity Production DB Hardening Sequence...")
     
-    # Ensure pgvector extension is enabled
-    print("🔌 Enabling pgvector extension...")
-    from sqlalchemy import text
-    async with async_engine.begin() as conn:
-        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+    # Ensure pgvector extension is enabled for Postgres
+    if "postgresql" in str(async_engine.url) or "postgres" in str(async_engine.url):
+        print("🔌 Enabling pgvector extension...")
+        from sqlalchemy import text
+        try:
+            async with async_engine.begin() as conn:
+                await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+        except Exception as e:
+            print(f"⚠️  pgvector extension note: {e}")
     
     # 1. Database Schema
-    migration_success = await run_alembic_upgrade()
+    is_sqlite = "sqlite" in str(async_engine.url)
+    migration_success = False
+    if not is_sqlite:
+        migration_success = await run_alembic_upgrade()
+    else:
+        print("ℹ️  SQLite local database detected: using SQLAlchemy create_all directly.")
+
     if not migration_success:
         print("🛠️  Performing fallback schema baseline (create_all)...")
         async with async_engine.begin() as conn:

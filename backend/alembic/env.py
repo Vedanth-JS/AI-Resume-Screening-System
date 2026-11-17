@@ -1,8 +1,15 @@
 import asyncio
+import os
+import sys
+from pathlib import Path
 from logging.config import fileConfig
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
+
+# Ensure backend root is in sys.path
+backend_root = str(Path(__file__).resolve().parent.parent)
+if backend_root not in sys.path:
+    sys.path.insert(0, backend_root)
 
 from alembic import context
 from app.db.database import Base
@@ -21,6 +28,7 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 from sqlalchemy.ext.asyncio import create_async_engine
 from app.core.config import settings
+from app.core.database_config import get_database_url
 
 # add your model's MetaData object here
 # for 'autogenerate' support
@@ -28,7 +36,7 @@ target_metadata = Base.metadata
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
-    url = settings.DATABASE_URL
+    url = get_database_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -47,7 +55,7 @@ def do_run_migrations(connection: Connection) -> None:
 async def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
     connectable = create_async_engine(
-        settings.DATABASE_URL,
+        get_database_url(),
         poolclass=pool.NullPool,
     )
 

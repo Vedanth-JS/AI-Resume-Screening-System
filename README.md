@@ -1,257 +1,219 @@
-<div align="center">
-  <h1>🤖 AI Resume Screening System</h1>
-  <p><strong>Enterprise-Grade Applicant Tracking System powered by Google Gemini & LangGraph</strong></p>
+# 🚀 AI Resume Screening & Matching System (Enterprise ATS)
 
-  [![Python Version](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/release/python-3110/)
-  [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-  [![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
-  <br />
-  <a href="#-quick-start">Quick Start</a> •
-  <a href="#-features">Features</a> •
-  <a href="#-tech-stack">Tech Stack</a> •
-  <a href="#-screenshots">Screenshots</a>
-</div>
+An intelligent, enterprise-grade AI Applicant Tracking & Resume Screening System. The platform parses resumes (PDF, DOCX, DOC, TXT), extracts skills and candidate experience, matches candidate profiles against job requisitions using semantic embeddings (Google Gemini LLM & cosine similarity), computes multidimensional match scores, and provides recruiter-centric dashboards with analytics, candidate rankings, and role-based access control.
 
 ---
 
-## 🌐 Live Application & Demo
-
-[![Live Demo](https://img.shields.io/badge/🚀_Live_Demo-ai--resume--screening--system.vercel.app-FF6B35?style=for-the-badge&logo=vercel&logoColor=white)](https://ai-resume-screening-system-sooty.vercel.app)
-[![Backend Status](https://img.shields.io/badge/⚡_Backend_API-ai--ats--backend.onrender.com-46E3B7?style=for-the-badge&logo=render&logoColor=white)](https://ai-ats-backend-yv1f.onrender.com/docs)
-
-| Component | Live Deployment URL | Hosting Platform |
-| :--- | :--- | :--- |
-| **Frontend Web App** | [ai-resume-screening-system-sooty.vercel.app](https://ai-resume-screening-system-sooty.vercel.app) | **Vercel** |
-| **Backend REST API** | [ai-ats-backend-yv1f.onrender.com](https://ai-ats-backend-yv1f.onrender.com) | **Render** |
-| **Interactive API Docs** | [ai-ats-backend-yv1f.onrender.com/docs](https://ai-ats-backend-yv1f.onrender.com/docs) | **Swagger / OpenAPI** |
-| **Database & Vector Store** | PostgreSQL + `pgvector` | **Supabase** |
-
-### 🔑 Demo Login Credentials
-- **Email**: `vedanth@gmail.com`
-- **Password**: `Password123!`
+## 📋 Table of Contents
+- [Architecture & Tech Stack](#-architecture--tech-stack)
+- [Prerequisites](#-prerequisites)
+- [Quickstart (Single Command)](#-quickstart-single-command)
+- [Default Endpoints & Credentials](#-default-endpoints--credentials)
+- [Configuration & Environment Variables](#-configuration--environment-variables)
+- [Project Structure](#-project-structure)
+- [API Documentation](#-api-documentation)
+- [Troubleshooting & FAQ](#-troubleshooting--faq)
 
 ---
 
-## 🚀 Overview
+## 🛠 Architecture & Tech Stack
 
-An intelligent AI-powered Applicant Tracking System that revolutionizes recruitment workflows. Built with **FastAPI**, **React**, and **Google Gemini AI**, it automates resume parsing, skill matching, bias detection, and candidate scoring with enterprise-grade reliability.
+- **Frontend**: React 18, Vite, Tailwind CSS, Lucide Icons, Axios. Runs at `http://localhost:8081`.
+- **Backend**: FastAPI (Python 3.10–3.12), Uvicorn, SQLAlchemy (Async), Alembic, Pydantic v2. Runs at `http://localhost:8000`.
+- **AI & NLP Pipeline**:
+  - **Google Gemini API** (`gemini-1.5-flash` / `text-embedding-004`): Deep resume entity extraction, semantic embedding calculation, and structured candidate evaluation.
+  - **Resume Parsers**: `pypdf`, `pdfplumber`, `python-docx` for robust document parsing with regex and NLP fallback parsing.
+  - **Scoring Engine**: Hybrid score combining Cosine Semantic Similarity (40%), Required Skill Coverage (30%), Experience Match (20%), and Education Alignment (10%).
+- **Database**:
+  - SQLite (`backend/ai_ats.db`) for immediate out-of-the-box local development with automated migrations and seed data.
+  - PostgreSQL / Supabase with `pgvector` supported for production enterprise deployments.
 
-### ✨ Key Features
+---
 
-- **🧠 AI-Powered Screening**: Multi-agent pipeline using Gemini-1.5-Flash for intelligent resume parsing and analysis
-- **⚡ Bulk Processing**: Screen 100+ resumes in parallel with real-time progress tracking
-- **🎯 Smart Matching**: Vector-based semantic search using pgvector embeddings for skill matching
-- **🛡️ Bias Detection**: Automated bias detection in job descriptions and candidate evaluations
-- **📊 Real-Time Analytics**: Live dashboards with candidate funnel metrics and score distributions
-- **🔍 Natural Language Search**: AI chat interface for querying candidates using natural language
-- **👮 Enterprise RBAC**: Multi-tenant isolation with Admin, Recruiter, and Viewer roles
-- **🎨 Modern UI**: Premium glassmorphism dashboard with responsive design
+## 💻 Prerequisites
 
-## � Tech Stack
+Ensure you have the following installed on your machine:
 
-| Component | Technology | Purpose |
-| :--- | :--- | :--- |
-| **Backend** | FastAPI (Python 3.11) | High-concurrency async API |
-| **Frontend** | React 18 + Vite + TailwindCSS | Modern dashboard UI |
-| **AI Models** | Google Gemini 1.5 Flash | Resume parsing & reasoning |
-| **Database** | PostgreSQL + pgvector | Relational data & vector embeddings |
-| **Task Queue** | Celery + Redis | Asynchronous background processing |
-| **Vector Search** | pgvector | Semantic candidate matching |
-| **Monitoring** | Flower | Celery task monitoring |
+1. **Node.js**: `v18.0.0` or higher ([Download Node.js](https://nodejs.org/))
+2. **Python**: `3.10`, `3.11`, or `3.12` ([Download Python](https://www.python.org/))
+   - *Windows users*: Ensure **"Add Python to PATH"** is checked during installation.
+3. **Git**: ([Download Git](https://git-scm.com/))
 
-## 🕹 Quick Start
+---
 
-### Prerequisites
+## ⚡ Quickstart (Single Command)
 
-- Python 3.11+
-- Node.js 18+
-- PostgreSQL 15+
-- Redis
-- Google API Key (Gemini)
-
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/vedanth-js/ai-ats.git
-   cd ai-ats
-   ```
-
-2. **Backend Setup**
-   ```bash
-   cd backend
-   pip install -r requirements.txt
-   cp .env.example .env
-   # Add your GOOGLE_API_KEY to .env
-   python init_db.py
-   uvicorn app.main:app --reload --port 8080
-   ```
-
-3. **Frontend Setup**
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
-
-4. **Start Redis (for Celery)**
-   ```bash
-   redis-server
-   ```
-
-5. **Start Celery Worker**
-   ```bash
-   cd backend
-   celery -A app.workers.celery_app worker --loglevel=info
-   ```
-
-### Docker Deployment
+You can run the entire full-stack application with just two standard commands:
 
 ```bash
-docker compose up -d --build
+# 1. Clone the repository
+git clone https://github.com/Vedanth-JS/AI-Resume-Screening-System.git
+cd AI-Resume-Screening-System
+
+# 2. Install root and frontend dependencies
+npm install
+
+# 3. Start the entire application (Backend + Frontend)
+npm run dev
 ```
 
-Access the application at:
-- **Frontend**: http://localhost:4173
-- **Backend API**: http://localhost:8080
-- **API Docs**: http://localhost:8080/docs
-- **Celery Monitor**: http://localhost:5555
-
-## 📋 Core Features
-
-### Resume Upload & Screening
-- **Drag & Drop Upload**: Upload multiple PDF resumes with validation
-- **Real-time Progress**: Track parsing, screening, and scoring status
-- **Error Handling**: Robust error recovery with retry functionality
-- **File Validation**: PDF-only uploads with 10MB size limit
-
-### AI-Powered Analysis
-- **Resume Parsing**: Extract candidate details, skills, and experience
-- **Skill Matching**: Keyword and semantic-based skill evaluation
-- **Experience Scoring**: Compare candidate experience against job requirements
-- **Bias Detection**: Identify and flag biased language in job descriptions
-
-### Candidate Management
-- **Vector Search**: Natural language search across candidate pool
-- **AI Chat**: Query candidates using conversational interface
-- **Score Filtering**: Filter candidates by match scores
-- **Application Tracking**: Track candidates through hiring pipeline
-
-### Analytics Dashboard
-- **Funnel Metrics**: Visualize candidate pipeline stages
-- **Score Distribution**: Analyze candidate score distributions
-- **Time-to-Hire**: Track recruitment efficiency metrics
-- **Skill Trends**: Monitor in-demand skills over time
+### What `npm run dev` Does Automatically:
+1. **Detects Python**: Locates `python`, `py`, or `python3` on your system.
+2. **Virtual Environment**: Automatically creates a Python virtual environment (`.venv`) if one does not exist.
+3. **Dependency Management**: Installs dependencies from `backend/requirements.txt` and caches the state in `.venv/.requirements_hash` to avoid slow re-installs on subsequent launches.
+4. **Database Auto-Initialization**: Initializes the local database schema and seeds initial roles, organizations, recruiter profiles, and sample job listings.
+5. **Concurrent Execution**: Launches both the FastAPI backend and Vite frontend concurrently.
+6. **Clean Termination**: Gracefully stops all child processes (FastAPI and Vite) when pressing `Ctrl + C`.
 
 ---
 
-## ✨ Platform Walkthrough
+## 🌐 Default Endpoints & Credentials
 
-Below are the major modules of the AI Resume Screening System.
+| Service | URL | Description |
+| :--- | :--- | :--- |
+| **Frontend Web App** | [http://localhost:8081](http://localhost:8081) | Interactive ATS recruiter & candidate dashboard |
+| **Backend REST API** | [http://localhost:8000](http://localhost:8000) | FastAPI application root & API routes |
+| **Interactive API Docs** | [http://localhost:8000/docs](http://localhost:8000/docs) | Swagger UI for exploring and testing API endpoints |
+| **Alternative API Docs** | [http://localhost:8000/redoc](http://localhost:8000/redoc) | ReDoc API documentation |
 
-## 📸 Live Application Screenshots
-
-### 🔐 1. Split-Panel Dark Mode Authentication & 3D ATS Preview
-
-<div align="center">
-
-<img src="screenshots/01_Login_Register_Screen.jpg" width="100%" alt="Login and Registration Screen" />
-
-</div>
-
-> **Features**: Glassmorphic dark theme, mouse-tracking radial spotlight, animated floating particles, live stats, and 3D interactive ATS Candidate Pipeline preview with score rings.
+### Default Recruiter / Admin Login
+- **Email**: `admin@ai-ats.com`
+- **Password**: `admin123`
+- **Role**: `super_admin` / `recruiter`
 
 ---
 
-### 💼 2. Jobs Management & Candidate Pipeline
+## ⚙️ Configuration & Environment Variables
 
-<div align="center">
+The repository includes a root [.env.example](file:///.env.example) template. When running in local development, the system automatically defaults to an embedded SQLite database (`backend/ai_ats.db`), meaning **no external database setup is required**.
 
-<img src="screenshots/02_Jobs_Candidate_Pipeline.jpg" width="100%" alt="Jobs Management Dashboard" />
-
-</div>
-
-> **Features**: Manage active job postings, track applicant counts, average match scores, and monitor pipeline progress across all departments in real time.
-
----
-
-### 🔍 3. Gemini AI Semantic Search & Chat (RAG)
-
-<div align="center">
-
-<img src="screenshots/03_AI_Chat_Vector_Search.jpg" width="100%" alt="AI Chat Natural Language Vector Search" />
-
-</div>
-
-> **Features**: Natural language queries powered by Google Gemini embeddings and Supabase `pgvector` cosine similarity search for candidate matching.
-
----
-
-## 🔧 Configuration
-
-### Environment Variables
+### Backend Configuration (`backend/.env` or root `.env`)
 
 ```env
-# Database
-DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/resume_db
+# Environment Mode
+APP_ENV=development
+DEBUG=true
 
-# Redis
-REDIS_URL=redis://localhost:6379/0
+# Database Configuration
+# Default: Local SQLite (no installation needed)
+DATABASE_URL=sqlite+aiosqlite:///backend/ai_ats.db
 
-# AI Services
-GOOGLE_API_KEY=your_google_api_key_here
-LLM_MODEL=gemini-1.5-flash
+# Optional: PostgreSQL with pgvector for production
+# DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/ai_ats
 
-# Security
-SECRET_KEY=your_secret_key_here
+# Security & Authentication
+SECRET_KEY=dev-insecure-secret-key-change-in-production-min-32-chars-long
 ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=1440
+MFA_ENFORCE_FOR_ADMINS=false
+
+# Google Gemini API Key (Required for AI Parsing & Semantic Embeddings)
+# Get your free key at: https://aistudio.google.com/
+GEMINI_API_KEY=your_gemini_api_key_here
+
+# CORS Allowed Origins
+CORS_ORIGINS=["http://localhost:8081","http://127.0.0.1:8081","http://localhost:5173","http://127.0.0.1:5173","http://localhost:8000"]
 ```
 
-## 🧪 Testing
+### Frontend Configuration (`frontend/.env`)
 
-```bash
-# Backend tests
-cd backend
-pytest
-
-# Frontend tests
-cd frontend
-npm test
+```env
+VITE_API_URL=/api
 ```
-
-## 📄 API Documentation
-
-Interactive API documentation available at `/docs` when running the backend.
-
-### Key Endpoints
-
-- `POST /api/resume/upload` - Upload and screen resume
-- `GET /api/jobs` - List job postings
-- `POST /api/chat` - AI-powered candidate search
-- `GET /api/analytics/overview` - Dashboard metrics
-
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📜 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- Google Gemini AI for powerful language models
-- FastAPI for the amazing async framework
-- The open-source community for excellent tools
 
 ---
 
-<div align="center">
-  <sub>Built with ❤️ for modern recruitment teams</sub>
-</div>
+## 📂 Project Structure
+
+```text
+AI-Resume-Screening-System/
+│
+├── backend/                        # FastAPI Backend Application
+│   ├── alembic/                    # Database migrations
+│   ├── app/
+│   │   ├── api/                    # API route controllers (auth, resume, jobs, enterprise)
+│   │   ├── core/                   # Security, config, parser, scoring, pipeline
+│   │   ├── db/                     # Database connection & base classes
+│   │   ├── models/                 # SQLAlchemy ORM models
+│   │   ├── schemas/                # Pydantic validation schemas
+│   │   └── services/               # Gemini AI service, job fetcher, analytics
+│   ├── ai_ats.db                   # Local SQLite database (auto-generated)
+│   ├── init_db.py                  # Database bootstrap & schema migration script
+│   ├── seed_data.py                # Database seeder (roles, jobs, admin user)
+│   ├── main.py                     # Entry point proxy
+│   └── requirements.txt            # Python dependencies
+│
+├── frontend/                       # React 18 + Vite Frontend Application
+│   ├── src/
+│   │   ├── components/             # UI widgets, layout, navigation, charts
+│   │   ├── context/                # Auth and notification React contexts
+│   │   ├── pages/                  # Dashboard, resume screening, jobs, analytics
+│   │   └── services/               # API client (Axios)
+│   ├── package.json                # Frontend npm configuration
+│   └── vite.config.ts              # Vite configuration & backend proxying
+│
+├── scripts/
+│   └── setup-and-run.js            # Cross-platform full-stack launcher
+│
+├── .env.example                    # Environment variables template
+├── package.json                    # Root orchestrator npm package.json
+└── README.md                       # Project documentation
+```
+
+---
+
+## 📖 API Documentation & Core Endpoints
+
+Visit [http://localhost:8000/docs](http://localhost:8000/docs) when the application is running for interactive endpoint testing.
+
+### Authentication
+- `POST /api/auth/token` - OAuth2 password bearer token exchange.
+- `POST /api/auth/register` - Create recruiter / candidate account.
+- `GET /api/auth/me` - Fetch authenticated user profile.
+
+### Resume Screening & Parsing
+- `POST /api/resume/upload` - Upload resume (`.pdf`, `.docx`, `.doc`, `.txt`), trigger automated text extraction, AI parsing, and database indexing.
+- `POST /api/resume/analyze-jd` - Match an uploaded resume against a target job description and calculate match score with gap analysis.
+- `GET /api/resume/{resume_id}` - Retrieve extracted resume profile, skills, and work history.
+
+### Job Management
+- `GET /api/jobs` - List open job postings.
+- `POST /api/jobs` - Create new job posting with required skills, experience, and department.
+- `GET /api/jobs/{job_id}/candidates` - Retrieve ranked candidates scored against a job.
+
+---
+
+## 🔧 Troubleshooting & FAQ
+
+### 1. `python: command not found` or virtual environment not created
+- Ensure Python is installed (version 3.10 to 3.12).
+- On Windows, verify that Python is added to your environment `PATH`. Run `python --version` or `py --version` in terminal.
+
+### 2. Port Conflicts (Port 8000 or 8081 already in use)
+- **Port 8000**: Check if an existing FastAPI or Uvicorn process is running:
+  - Windows: `netstat -ano | findstr :8000` then `taskkill /PID <PID> /F`
+  - Linux/Mac: `lsof -i :8000` then `kill -9 <PID>`
+- **Port 8081**: Vite will prompt or fallback if port 8081 is occupied, or terminate the blocking process similarly.
+
+### 3. Gemini API Rate Limiting or Invalid Key
+- If `GEMINI_API_KEY` is omitted or invalid, the backend's built-in fallback parser will automatically take over using heuristic and rule-based extraction for candidate name, email, phone, and skills.
+- To utilize advanced AI scoring and semantic embeddings, create a free API key at [Google AI Studio](https://aistudio.google.com/) and place it in `backend/.env`.
+
+### 4. Admin Login Returns 403 Forbidden
+- Ensure `MFA_ENFORCE_FOR_ADMINS=false` is set in `backend/.env` for local development. Default seeded admin accounts do not have TOTP hardware tokens configured out-of-the-box.
+
+### 5. Database Reset / Clean State
+If you want to completely reset the local database:
+```bash
+# Delete the local SQLite database
+rm backend/ai_ats.db
+
+# Re-run setup
+npm run dev
+```
+The startup orchestrator will automatically recreate the database tables and re-seed the admin user and sample job descriptions.
+
+---
+
+## 📄 License
+This project is licensed under the MIT License.

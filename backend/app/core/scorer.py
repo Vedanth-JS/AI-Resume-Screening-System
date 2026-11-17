@@ -15,28 +15,29 @@ from rapidfuzz import fuzz
 from ..core.config import settings
 from ..core.logger import log
 
-# ─── SentenceTransformer fallback (lazy-loaded, may not be installed) ────────
-try:
-    from sentence_transformers import SentenceTransformer, util as st_util
-    _ST_AVAILABLE = True
-except Exception:
-    SentenceTransformer = None
-    st_util = None
-    _ST_AVAILABLE = False
-
+# ─── SentenceTransformer fallback (strictly lazy-loaded) ─────────────────────
+_ST_AVAILABLE = None
 _st_model = None
+_st_util = None
 
 
 def _get_st_model():
-    global _st_model
-    if not _ST_AVAILABLE:
-        return None
-    if _st_model is None:
-        try:
-            _st_model = SentenceTransformer("all-MiniLM-L6-v2")
-        except Exception:
-            _st_model = None
-    return _st_model
+    global _st_model, _st_util, _ST_AVAILABLE
+    if _ST_AVAILABLE is False:
+        return None, None
+    if _st_model is not None:
+        return _st_model, _st_util
+    try:
+        from sentence_transformers import SentenceTransformer, util as util_mod
+        _st_model = SentenceTransformer("all-MiniLM-L6-v2", local_files_only=True)
+        _st_util = util_mod
+        _ST_AVAILABLE = True
+        return _st_model, _st_util
+    except Exception:
+        _ST_AVAILABLE = False
+        _st_model = None
+        _st_util = None
+        return None, None
 
 # ─── Regex patterns ──────────────────────────────────────────────────────────
 _DATE_PATTERN   = re.compile(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s*\d{4}\b|\b\d{4}\s*[-–]\s*(\d{4}|present|current)\b", re.I)
@@ -136,19 +137,41 @@ class Scorer:
 
     @staticmethod
     def semantic_score_st(resume_text: str, jd_text: str) -> float:
-        """SentenceTransformer fallback (all-MiniLM-L6-v2, 384 dimensions)."""
-        if not _ST_AVAILABLE or not resume_text or not jd_text:
+        """SentenceTransformer fallback (all-MiniLM-L6-v2, 384 dimensions) if preloaded."""
+        if not resume_text or not jd_text:
             return 0.0
-        try:
-            model = _get_st_model()
-            if model is None:
-                return 0.0
-            emb1 = model.encode(resume_text[:3000], convert_to_tensor=True)
-            emb2 = model.encode(jd_text[:3000], convert_to_tensor=True)
-            return round(float(st_util.cos_sim(emb1, emb2)[0][0]) * 100, 2)
-        except Exception as e:
-            log.warning("semantic_score_st.error", error=str(e))
-            return 0.0
+        global _st_model, _st_util
+        if _st_model is not None and _st_util is not None:
+            try:
+                emb1 = _st_model.encode(resume_text[:3000], convert_to_tensor=True)
+                emb2 = _st_model.encode(jd_text[:3000], convert_to_tensor=True)
+                return round(float(_st_util.cos_sim(emb1, emb2)[0][0]) * 100, 2)
+            except Exception:
+                pass
+        return 0.0
+
+    @staticmethod
+    def semantic_score_token_overlap(resume_text: str, jd_text: str) -> float:
+        """Fast token-based semantic similarity fallback when ML models are unavailable."""
+        if not resume_text or not jd_text:
+            return 50.0
+        stopwords = {
+            "the", "and", "is", "in", "to", "of", "a", "with", "for", "on", "as",
+            "an", "by", "at", "be", "this", "that", "from", "or", "are", "was",
+            "will", "we", "you", "our", "all", "have", "has", "can", "work", "job"
+        }
+        def get_tokens(txt: str):
+            words = re.findall(r"\b[a-zA-Z]{3,}\b", txt.lower())
+            return set(w for w in words if w not in stopwords)
+
+        r_tokens = get_tokens(resume_text)
+        j_tokens = get_tokens(jd_text)
+        if not j_tokens:
+            return 70.0
+        overlap = len(r_tokens & j_tokens)
+        sim = overlap / len(j_tokens)
+        score = 55.0 + min(sim * 60.0, 40.0)
+        return round(score, 2)
 
     # ═══════════════════════════════════════════════════════════════════════════
     # 3. Format Score (0–100)
@@ -246,11 +269,13 @@ class Scorer:
         sec = Scorer.section_score(resume_text)
         exp = Scorer.experience_score(candidate_years, required_years)
 
-        # Semantic: use override if provided, else try SentenceTransformer
-        if semantic_score_override is not None:
+        # Semantic: use override if provided, else try SentenceTransformer or token overlap
+        if semantic_score_override is not None and semantic_score_override > 0:
             sem = semantic_score_override
         else:
             sem = Scorer.semantic_score_st(resume_text, jd_text)
+            if sem <= 0.0:
+                sem = Scorer.semantic_score_token_overlap(resume_text, jd_text)
 
         w = settings
         overall = (

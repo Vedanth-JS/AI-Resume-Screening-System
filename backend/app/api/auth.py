@@ -29,6 +29,7 @@ class RegisterRequest(BaseModel):
     password: str
     organization_name: str
     organization_slug: str
+    full_name: Optional[str] = None
 
 class OAuthInitiateRequest(BaseModel):
     provider: str  # google, github, microsoft, linkedin

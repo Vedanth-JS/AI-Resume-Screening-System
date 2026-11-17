@@ -35,11 +35,24 @@ import concurrent.futures
 
 def check_postgres_reachable(url: str) -> bool:
     """Check if PostgreSQL database is reachable and accepting asyncpg connections."""
+    try:
+        from urllib.parse import urlparse
+        clean_url = url.replace("postgresql+asyncpg://", "postgresql://").replace("postgres+asyncpg://", "postgres://")
+        parsed = urlparse(clean_url)
+        host = parsed.hostname
+        port = parsed.port or 5432
+        if not host:
+            return False
+        with socket.create_connection((host, port), timeout=2.0):
+            pass
+    except Exception as e:
+        log.warning("postgres_socket_unreachable_fallback_sqlite", error=str(e))
+        return False
+
     async def _test():
         try:
             import asyncpg
-            clean_url = url.replace("postgresql+asyncpg://", "postgresql://").replace("postgres+asyncpg://", "postgres://")
-            conn = await asyncio.wait_for(asyncpg.connect(clean_url, statement_cache_size=0), timeout=3.0)
+            conn = await asyncio.wait_for(asyncpg.connect(clean_url, statement_cache_size=0, timeout=3.0), timeout=3.0)
             await conn.execute("SELECT 1")
             await conn.close()
             return True
@@ -78,7 +91,9 @@ def get_database_url() -> str:
     if "postgresql" in url or "postgres" in url:
         if not check_postgres_reachable(url):
             log.warning("database_fallback_sqlite_active")
-            return "sqlite+aiosqlite:///./ai_ats.db"
+            backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            db_path = os.path.join(backend_dir, "ai_ats.db").replace("\\", "/")
+            return f"sqlite+aiosqlite:///{db_path}"
 
     return url
 

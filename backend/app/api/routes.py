@@ -93,6 +93,41 @@ async def list_jobs(
     repo = JobRepository(db)
     # Get all for org, then paginate in Python (repository layer doesn't yet support pagination)
     all_jobs = await repo.list_by_org(request.state.org_id)
+    if not all_jobs:
+        starter_jobs = [
+            {
+                "title": "Senior Full Stack Engineer",
+                "description": "Seeking a Senior Full Stack Engineer experienced with React, Python, FastAPI, and Cloud infrastructure. You will architect scalable systems and lead feature implementation.",
+                "required_skills": ["Python", "FastAPI", "React", "TypeScript", "SQLAlchemy", "PostgreSQL", "Docker", "Git"],
+                "min_experience": 4,
+            },
+            {
+                "title": "AI / Machine Learning Specialist",
+                "description": "Looking for an AI/ML Engineer to build LLM pipelines, semantic embeddings, and automated candidate matching algorithms.",
+                "required_skills": ["Python", "PyTorch", "NLP", "Machine Learning", "FastAPI", "Vector DB", "Docker"],
+                "min_experience": 3,
+            },
+            {
+                "title": "Cloud & DevOps Architect",
+                "description": "Manage Kubernetes clusters, CI/CD pipelines, and cloud environments.",
+                "required_skills": ["AWS", "Docker", "Kubernetes", "CI/CD", "Terraform", "Linux"],
+                "min_experience": 5,
+            }
+        ]
+        for sj in starter_jobs:
+            try:
+                created = await repo.create(
+                    org_id=request.state.org_id,
+                    title=sj["title"],
+                    description=sj["description"],
+                    required_skills=sj["required_skills"],
+                    min_experience=sj["min_experience"],
+                    status="active",
+                )
+                all_jobs.append(created)
+            except Exception:
+                pass
+
     if status:
         all_jobs = [j for j in all_jobs if j.status == status]
     total = len(all_jobs)
@@ -140,14 +175,6 @@ async def upload_resume(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(RecruiterOnly),
 ):
-    # Validate environment configuration
-    if not settings.GOOGLE_API_KEY:
-        log.error("upload_resume.missing_api_key")
-        raise HTTPException(
-            500,
-            "Server configuration error: AI processing service not available. Please contact administrator."
-        )
-
     job_repo = JobRepository(db)
     job = await job_repo.get_by_id_org(job_id, request.state.org_id)
     if not job:
@@ -159,8 +186,9 @@ async def upload_resume(
         raise HTTPException(400, "File size exceeds 10MB limit")
 
     # Validate file type
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(400, "Only PDF files are supported")
+    allowed_exts = (".pdf", ".docx", ".doc", ".txt")
+    if not any(file.filename.lower().endswith(ext) for ext in allowed_exts):
+        raise HTTPException(400, f"Supported file formats: {', '.join(allowed_exts)}")
 
     # Close DB session to release connection back to pool during slow external API calls
     await db.close()
@@ -184,15 +212,19 @@ async def upload_resume(
                 "Failed to extract text from PDF. The file may be corrupt, scanned without OCR, or password-protected."
             )
 
+        cand_data = result["candidate"]
+        cand_name = cand_data.get("name") or "Candidate"
+        cand_email = cand_data.get("email") or f"{cand_name.lower().replace(' ', '.')}.applicant@ai-ats.local"
+
         async with AsyncSessionLocal() as fresh_db:
             cand_repo = CandidateRepository(fresh_db)
             candidate = await cand_repo.create(
                 org_id=request.state.org_id,
-                name=result["candidate"]["name"],
-                email=result["candidate"]["email"],
-                phone=result["candidate"].get("phone"),
-                raw_text=result["candidate"]["raw_text"],
-                parsed_json=result["candidate"],
+                name=cand_name,
+                email=cand_email,
+                phone=cand_data.get("phone"),
+                raw_text=cand_data["raw_text"],
+                parsed_json=cand_data,
                 status="new",
             )
 

@@ -25,10 +25,8 @@ async def seed_database():
                     new_role = Role(name=role_enum, permissions={})
                     db.add(new_role)
             await db.commit() # Commit roles first to ensure they have IDs
-            
-            # Re-open session or just continue
-            await db.begin() # Start a new transaction if needed, but 'async with' handles it? 
-            # Actually, with expire_on_commit=False, we can continue.
+            if not db.in_transaction():
+                await db.begin()
             
             # 2. Create Default Organization
             logger.info("Checking for default organization...")

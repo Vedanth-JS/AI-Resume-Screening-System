@@ -184,7 +184,7 @@ async def delete_webhook(
 
 @router.get("/calendar/availability", tags=["Calendar"])
 async def get_interview_slots(
-    provider: str = Query("google", regex="^(google|outlook_365|apple)$"),
+    provider: str = Query("google", pattern="^(google|outlook_365|apple)$"),
     start_date: str = Query(None),
     end_date: str = Query(None),
     duration_minutes: int = Query(60, ge=15, le=240),

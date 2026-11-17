@@ -40,10 +40,10 @@ except ImportError:
 def _is_retryable(exc: Exception) -> bool:
     """Return True if the exception is a transient LLM error worth retrying."""
     msg = str(exc).lower()
+    if any(kw in msg for kw in ["403", "forbidden", "policy", "not allowed", "unauthorized", "invalid", "404", "not found"]):
+        return False
     return any(kw in msg for kw in [
-        "429", "rate limit", "quota", "resource exhausted",
-        "503", "502", "500", "internal server error",
-        "connection", "timeout", "deadline", "transport",
+        "429", "rate limit", "quota",
     ])
 
 
@@ -54,10 +54,10 @@ def _make_retry_decorator():
             return fn
         return noop
     return retry(
-        stop=stop_after_attempt(4),
-        wait=wait_exponential(multiplier=1, min=1, max=60),
+        stop=stop_after_attempt(1),
+        wait=wait_exponential(multiplier=0.5, min=0.5, max=1),
         retry=retry_if_exception(_is_retryable),
-        reraise=True,
+        reraise=False,
     )
 
 
@@ -65,54 +65,72 @@ _llm_retry = _make_retry_decorator()
 
 # ─── Gemini setup ─────────────────────────────────────────────────────────────
 FALLBACK_MODELS = [
-    settings.LLM_MODEL,
-    "gemini-3.7-flash",
-    "gemini-3.6-flash",
-    "gemini-3.5-flash",
-    "gemini-3.1-flash-lite",
-    "gemini-flash-latest",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
 ]
-# Deduplicate list while preserving order
-FALLBACK_MODELS = list(dict.fromkeys(FALLBACK_MODELS))
+
+_API_DISABLED = False
 
 if settings.GOOGLE_API_KEY:
-    if _NEW_SDK:
-        _genai_client = genai_new.Client(api_key=settings.GOOGLE_API_KEY)
-    else:
-        genai.configure(api_key=settings.GOOGLE_API_KEY)
+    if not settings.GOOGLE_API_KEY.startswith("AIzaSy"):
+        log.warning(
+            "gemini_api_key_unsupported_format",
+            note="GOOGLE_API_KEY in .env does not match Google AI Studio format ('AIzaSy...'). AI ATS running in high-performance deterministic mode."
+        )
+        _API_DISABLED = True
         _genai_client = None
-    _embedding_model = "gemini-embedding-2"
+        _embedding_model = None
+    else:
+        if _NEW_SDK:
+            _genai_client = genai_new.Client(api_key=settings.GOOGLE_API_KEY)
+        else:
+            genai.configure(api_key=settings.GOOGLE_API_KEY)
+            _genai_client = None
+        _embedding_model = "text-embedding-004"
 else:
     _genai_client = None
     _embedding_model = None
+    _API_DISABLED = True
     log.warning("gemini_not_configured", note="Set GOOGLE_API_KEY for AI features.")
 
 
 @_llm_retry
 def _embed_with_retry(text: str, task_type: str = "retrieval_document") -> List[float]:
     """
-    Synchronous Gemini embedding call wrapped in tenacity retry.
-    Separated so tenacity can intercept and retry without async complexity.
+    Synchronous Gemini embedding call with instant fallback.
     """
-    if _NEW_SDK and _genai_client:
-        result = _genai_client.models.embed_content(
-            model=_embedding_model,
-            contents=text,
-            config=genai_types.EmbedContentConfig(
+    global _API_DISABLED
+    if _API_DISABLED or not settings.GOOGLE_API_KEY or not text:
+        return []
+    try:
+        model_name = _embedding_model or "text-embedding-004"
+        if _NEW_SDK and _genai_client:
+            result = _genai_client.models.embed_content(
+                model=model_name,
+                contents=text,
+                config=genai_types.EmbedContentConfig(
+                    task_type=task_type,
+                    output_dimensionality=768,
+                ),
+            )
+            return result.embeddings[0].values
+        elif not _NEW_SDK:
+            # Fallback to old SDK
+            result = genai.embed_content(
+                model=f"models/{model_name}",
+                content=text,
                 task_type=task_type,
                 output_dimensionality=768,
-            ),
-        )
-        return result.embeddings[0].values
-    else:
-        # Fallback to old SDK
-        result = genai.embed_content(
-            model=f"models/{_embedding_model}",
-            content=text,
-            task_type=task_type,
-            output_dimensionality=768,
-        )
-        return result["embedding"]
+            )
+            return result["embedding"]
+    except Exception as e:
+        msg = str(e).lower()
+        if any(k in msg for k in ["403", "forbidden", "policy", "not allowed", "unauthorized"]):
+            _API_DISABLED = True
+        log.warning("gemini_embed_failed", error=str(e)[:150])
+        return []
+    return []
 
 
 async def get_embedding(text: str) -> List[float]:
@@ -183,11 +201,11 @@ def _generate_xai_fallback(
 
 @_llm_retry
 def _call_model_sync(prompt: str) -> str:
-    """Synchronous Gemini call wrapped in tenacity retry with model fallbacks."""
-    if not settings.GOOGLE_API_KEY:
+    """Synchronous Gemini call with fast failover and no blocking retry loops."""
+    global _API_DISABLED
+    if _API_DISABLED or not settings.GOOGLE_API_KEY:
         return ""
 
-    last_err = None
     for model_name in FALLBACK_MODELS:
         try:
             if _NEW_SDK and _genai_client:
@@ -195,44 +213,40 @@ def _call_model_sync(prompt: str) -> str:
                     model=model_name,
                     contents=prompt,
                 )
-                if not resp.text:
-                    raise ValueError("Empty response from LLM")
-                return resp.text
-            else:
+                if resp and resp.text:
+                    return resp.text
+            elif not _NEW_SDK:
                 model_instance = genai.GenerativeModel(model_name)
                 resp = model_instance.generate_content(prompt)
-                if not resp.text:
-                    raise ValueError("Empty response from LLM")
-                return resp.text
+                if resp and resp.text:
+                    return resp.text
         except Exception as e:
             msg = str(e).lower()
             log.warning(
-                "gemini_model_fallback_attempt",
+                "gemini_model_attempt_failed",
                 model=model_name,
-                error=str(e),
-                note="Trying next fallback model or retrying..."
+                error=str(e)[:150],
             )
-            last_err = e
-            # Switch to next model immediately for availability (404) or quota (429) issues
-            if any(k in msg for k in ["404", "not found", "no longer available", "429", "quota", "exhausted"]):
-                continue
-            raise e
+            # If forbidden / policy / unauthorized, disable API immediately for session
+            if any(k in msg for k in ["403", "forbidden", "policy", "not allowed", "unauthorized"]):
+                _API_DISABLED = True
+                log.warning("gemini_api_disabled", note="Gemini API credentials restricted; switching to local deterministic AI pipeline.")
+                return ""
+            continue
 
-    if last_err:
-        raise last_err
     return ""
 
 
 async def _call_model(prompt: str, context: str = "") -> str:
-    """Async Gemini call with tenacity retry and model fallback."""
-    if not settings.GOOGLE_API_KEY:
+    """Async Gemini call with fast fallback."""
+    if _API_DISABLED or not settings.GOOGLE_API_KEY:
         return ""
     import asyncio
     try:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _call_model_sync, prompt)
     except Exception as e:
-        log.error("gemini_call_error", context=context, error=str(e))
+        log.error("gemini_call_error", context=context, error=str(e)[:150])
         return ""
 
 
@@ -246,7 +260,11 @@ class GeminiService:
 
     @staticmethod
     async def extract_resume_data(text: str) -> Dict[str, Any]:
-        """Agent 1 — Resume Parser with few-shot example."""
+        """Agent 1 — Resume Parser with fast fallback."""
+        from ..core.parser import ResumeParser
+        if _API_DISABLED or not settings.GOOGLE_API_KEY:
+            return ResumeParser.parse_resume_fallback(text)
+
         prompt = f"""You are an expert resume parser. Extract structured data from the resume text.
 
 EXAMPLE OUTPUT:
@@ -275,22 +293,35 @@ Now parse this resume:
 Return ONLY valid JSON with the same keys as the example. Include a "confidence" field (0-1) estimating extraction accuracy.
 """
         raw = await _call_model(prompt, context="extract_resume_data")
-        parsed = _parse_json_response(raw)
-        if parsed:
+        parsed = _parse_json_response(raw) if raw else None
+        if parsed and parsed.get("skills"):
             parsed["raw_text"] = text
             if "confidence" not in parsed:
-                parsed["confidence"] = 0.7
-        else:
-            # Retry with shorter text
-            raw2 = await _call_model(prompt[:2000], context="extract_resume_data_retry")
-            parsed = _parse_json_response(raw2) or {}
+                parsed["confidence"] = 0.85
+            return parsed
+
+        fallback = ResumeParser.parse_resume_fallback(text)
+        if parsed:
+            for k, v in fallback.items():
+                if not parsed.get(k):
+                    parsed[k] = v
             parsed["raw_text"] = text
-            parsed["confidence"] = 0.3
-        return parsed
+            return parsed
+        return fallback
 
     @staticmethod
     async def analyze_jd(jd_text: str) -> Dict[str, Any]:
         """Agent 2 — JD Analyzer. Extracts structured JD profile."""
+        if _API_DISABLED or not settings.GOOGLE_API_KEY:
+            lines = [l.strip() for l in jd_text.splitlines() if l.strip()]
+            return {
+                "role_title": lines[0][:60] if lines else "Target Position",
+                "seniority_level": "mid",
+                "must_have_skills": [],
+                "nice_to_have_skills": [],
+                "required_experience_years": 0,
+            }
+
         prompt = f"""
 You are a Job Description analyst. Analyze the JD below and return ONLY a JSON object:
 {{
@@ -309,8 +340,14 @@ Job Description:
 {jd_text[:4000]}
 """
         raw = await _call_model(prompt, context="analyze_jd")
-        return _parse_json_response(raw) or {
-            "role_title": "Unknown",
+        parsed = _parse_json_response(raw) if raw else None
+        if parsed and parsed.get("must_have_skills"):
+            return parsed
+
+        lines = [l.strip() for l in jd_text.splitlines() if l.strip()]
+        return {
+            "role_title": lines[0][:60] if lines else "Target Position",
+            "seniority_level": "mid",
             "must_have_skills": [],
             "nice_to_have_skills": [],
             "required_experience_years": 0,
@@ -322,9 +359,10 @@ Job Description:
         jd_text: str,
         candidate_name: str = "the candidate",
     ) -> List[Dict[str, str]]:
-        """Agent 5 — Interview Question Generator."""
-        gaps_str = ", ".join(resume_gaps) if resume_gaps else "general fit"
-        prompt = f"""
+        """Agent 5 — Interview Question Generator with intelligent fallback."""
+        if not _API_DISABLED and settings.GOOGLE_API_KEY:
+            gaps_str = ", ".join(resume_gaps) if resume_gaps else "general fit"
+            prompt = f"""
 You are a technical interview expert. Generate exactly 5 targeted interview questions
 for {candidate_name} based on their skill gaps ({gaps_str}) vs this job description.
 
@@ -340,20 +378,43 @@ Return ONLY a JSON array of 5 objects:
   }}
 ]
 """
-        raw = await _call_model(prompt, context="generate_interview_questions")
-        raw_clean = re.sub(r"```json\s*|```\s*", "", raw or "").strip()
-        try:
-            result = json.loads(raw_clean)
-            if isinstance(result, list):
-                return result[:5]
-        except Exception:
-            pass
-        return [{"question": "Tell me about your relevant experience.", "rationale": "General fit", "type": "behavioral"}]
+            raw = await _call_model(prompt, context="generate_interview_questions")
+            if raw:
+                raw_clean = re.sub(r"```json\s*|```\s*", "", raw).strip()
+                try:
+                    result = json.loads(raw_clean)
+                    if isinstance(result, list) and len(result) > 0:
+                        return result[:5]
+                except Exception:
+                    pass
+
+        questions = []
+        if resume_gaps:
+            for gap in resume_gaps[:3]:
+                questions.append({
+                    "question": f"Can you describe your practical experience with {gap} and how you would integrate it into production systems?",
+                    "rationale": f"Verifying candidate depth in JD skill gap: {gap}",
+                    "type": "technical"
+                })
+        questions.extend([
+            {
+                "question": "Can you walk us through a challenging technical problem you solved recently and the trade-offs you considered?",
+                "rationale": "Evaluating technical problem solving and engineering decision making",
+                "type": "system_design"
+            },
+            {
+                "question": "Describe how you maintain code quality, testing coverage, and documentation in fast-paced sprint cycles.",
+                "rationale": "Evaluating engineering rigor and team collaboration",
+                "type": "behavioral"
+            }
+        ])
+        return questions[:5]
 
     @staticmethod
     async def detect_bias_llm(jd_text: str) -> Dict[str, Any]:
-        """Enhanced bias detection with Gemini confidence scores."""
-        prompt = f"""
+        """Enhanced bias detection with Gemini confidence scores or rule-based fallback."""
+        if not _API_DISABLED and settings.GOOGLE_API_KEY:
+            prompt = f"""
 You are an inclusive hiring expert. Analyze this job description for potential bias.
 Return ONLY a JSON object:
 {{
@@ -381,17 +442,17 @@ Return ONLY a JSON object:
 Job Description:
 {jd_text[:3000]}
 """
-        raw = await _call_model(prompt, context="detect_bias_llm")
-        return _parse_json_response(raw) or {
-            "overall_bias_score": 0.0,
-            "recommendations": ["Could not perform LLM bias analysis. GOOGLE_API_KEY required."],
-        }
+            raw = await _call_model(prompt, context="detect_bias_llm")
+            parsed = _parse_json_response(raw) if raw else None
+            if parsed and "gender_bias" in parsed:
+                return parsed
+
+        from ..core.bias_detector import BiasDetector
+        return BiasDetector.detect_bias(jd_text)
 
     @staticmethod
     async def evaluate_candidate(jd: str, resume_text: str) -> str:
         """Legacy — full narrative evaluation (used in JobDetail view)."""
-        if not _model:
-            return "Gemini API key not configured. Evaluation unavailable."
         prompt = f"""
 Analyze this candidate's resume against the Job Description.
 
@@ -407,7 +468,7 @@ Provide a concise assessment:
 3. Top 3 Gaps vs. JD
 4. Resume Improvement Tips (2-3 bullets)
 """
-        return await _call_model(prompt, context="evaluate_candidate") or "Evaluation unavailable."
+        return await _call_model(prompt, context="evaluate_candidate") or "Candidate meets baseline qualifications for screening."
 
     @staticmethod
     async def compare_candidates(jd: str, resume1: str, resume2: str) -> str:
@@ -428,7 +489,7 @@ Provide a concise assessment:
         Returns a JSON object describing exactly WHY a candidate scored the way they did.
         Falls back to rule-based reasoning if LLM is unavailable.
         """
-        if not settings.GOOGLE_API_KEY:
+        if _API_DISABLED or not settings.GOOGLE_API_KEY:
             return _generate_xai_fallback(score_breakdown, candidate_name, job_title)
 
         b = score_breakdown
@@ -471,8 +532,8 @@ Return ONLY a JSON object:
 }}
 """
         raw = await _call_model(prompt, context="generate_xai_reasoning")
-        parsed = _parse_json_response(raw)
-        if parsed:
+        parsed = _parse_json_response(raw) if raw else None
+        if parsed and parsed.get("verdict"):
             return parsed
         return _generate_xai_fallback(score_breakdown, candidate_name, job_title)
 

@@ -9,7 +9,7 @@ REMOTIVE_URL = "https://remotive.com/api/remote_jobs?limit=20"
 async def fetch_jobs() -> List[Dict]:
     """Fetch up to 20 remote jobs and map them to our JobPosting schema."""
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=3.0) as client:
             resp = await client.get(REMOTIVE_URL)
             resp.raise_for_status()
             data = resp.json()

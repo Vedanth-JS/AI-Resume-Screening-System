@@ -573,6 +573,9 @@ export default function Register() {
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
+              <span style={{ fontSize: 12, color: "rgba(255,255,255,0.4)", marginTop: 6, display: "block" }}>
+                Must be at least 8 characters
+              </span>
             </div>
 
             {/* Success Message */}
