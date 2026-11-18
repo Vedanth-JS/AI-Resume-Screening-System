@@ -190,16 +190,29 @@ export const atsScoringService = {
     form.append('file', file);
     if (jobDescription) form.append('job_description', jobDescription);
     if (jobRole) form.append('job_role', jobRole);
-    return api.post('/ats/score-file', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+    return api.post('/ats/score-file', form, { timeout: 90000 });
   },
-  bulkScreen: (files, jobRole, jobDescription, customJd, weights) => {
-    const form = new FormData();
-    files.forEach((f) => form.append('files', f));
-    if (jobRole) form.append('job_role', jobRole);
-    if (jobDescription) form.append('job_description', jobDescription);
-    if (customJd) form.append('custom_jd', typeof customJd === 'string' ? customJd : JSON.stringify(customJd));
-    if (weights) form.append('weights', typeof weights === 'string' ? weights : JSON.stringify(weights));
-    return api.post('/ats/bulk-screen', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+  bulkScreen: async (files, jobRole, jobDescription, customJd, weights) => {
+    const buildForm = () => {
+      const form = new FormData();
+      files.forEach((f) => form.append('files', f));
+      if (jobRole) form.append('job_role', jobRole);
+      if (jobDescription) form.append('job_description', jobDescription);
+      if (customJd) form.append('custom_jd', typeof customJd === 'string' ? customJd : JSON.stringify(customJd));
+      if (weights) form.append('weights', typeof weights === 'string' ? weights : JSON.stringify(weights));
+      return form;
+    };
+    try {
+      return await api.post('/ats/bulk-screen', buildForm(), { timeout: 90000 });
+    } catch (err) {
+      const status = err?.response?.status;
+      // Auto-retry once on Render Free Tier cold-start (502/503/504) or transient network blip
+      if (!status || status === 502 || status === 503 || status === 504) {
+        await new Promise((r) => setTimeout(r, 3000));
+        return await api.post('/ats/bulk-screen', buildForm(), { timeout: 90000 });
+      }
+      throw err;
+    }
   },
   rescore: (candidates, jobRole, jobDescription, customJd, weights) => {
     return api.post('/ats/rescore', {
@@ -269,7 +282,15 @@ export const extractErrorMessage = (err, defaultMessage = 'An unexpected error o
   }
   
   if (typeof err.response?.data === 'string') {
-    return err.response.data;
+    const raw = err.response.data.trim();
+    if (raw.startsWith('<') || raw.toLowerCase().includes('<!doctype html')) {
+      const code = err.response?.status;
+      if (code === 502 || code === 503 || code === 504) {
+        return `Backend server is waking up (HTTP ${code}). Please retry in a few seconds.`;
+      }
+      return `Server returned HTTP ${code || 'error'}. Please retry.`;
+    }
+    if (raw) return raw;
   }
   
   if (err.response?.status) {

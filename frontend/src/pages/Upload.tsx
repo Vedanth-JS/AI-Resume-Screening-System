@@ -243,6 +243,12 @@ export default function UploadPage() {
   // ─── Files & Upload Queue ───────────────────────────────────────────────────
   const [files, setFiles] = useState<UploadingFile[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [batchError, setBatchError] = useState<string | null>(null);
+
+  // Pre-warm Render backend silently while user prepares files
+  useEffect(() => {
+    atsScoringService.getRoles().catch(() => {});
+  }, []);
 
   // ─── Results & Report Modal ─────────────────────────────────────────────────
   const [candidates, setCandidates] = useState<CandidateResult[]>([]);
@@ -336,10 +342,11 @@ export default function UploadPage() {
 
     setIsProcessing(true);
     setHasRequirementsChanged(false);
+    setBatchError(null);
 
     // Update steps
     setFiles((prev) =>
-      prev.map((f) => ({ ...f, status: 'UPLOADING', progress: 25, currentStep: 'Uploading...' }))
+      prev.map((f) => ({ ...f, status: 'UPLOADING', progress: 25, currentStep: 'Uploading...', error: undefined }))
     );
 
     try {
@@ -359,19 +366,34 @@ export default function UploadPage() {
         weights
       );
 
-      // Step indicator: Scoring complete
+      const returnedCandidates: CandidateResult[] = res.data?.candidates || [];
+
+      // Sync each file card status accurately from server response
+      const byFileName = new Map(returnedCandidates.map((c) => [c.file_name, c]));
       setFiles((prev) =>
-        prev.map((f) => ({ ...f, status: 'COMPLETED', progress: 100, currentStep: 'Complete!' }))
+        prev.map((f) => {
+          const matched = byFileName.get(f.name);
+          if (matched && matched.status === 'ERROR') {
+            return {
+              ...f,
+              status: 'ERROR',
+              progress: 100,
+              currentStep: 'Extraction Error',
+              error: matched.extraction_error || 'Unable to extract text from file.',
+            };
+          }
+          return { ...f, status: 'COMPLETED', progress: 100, currentStep: 'Complete!', error: undefined };
+        })
       );
 
-      const returnedCandidates = res.data?.candidates || [];
       setCandidates(returnedCandidates);
       setLastScreenedRole(screeningMode === 'PREDEFINED' ? selectedRole : customJD.title || 'Custom Role');
     } catch (err: any) {
       console.error('Bulk screening failed:', err);
-      const msg = extractErrorMessage(err, 'Bulk screening failed');
+      const msg = extractErrorMessage(err, 'Bulk screening failed. Please retry.');
+      setBatchError(msg);
       setFiles((prev) =>
-        prev.map((f) => ({ ...f, status: 'ERROR', progress: 100, error: msg }))
+        prev.map((f) => ({ ...f, status: 'ERROR', progress: 100, currentStep: 'Failed', error: msg }))
       );
     } finally {
       setIsProcessing(false);
@@ -873,6 +895,23 @@ Generated deterministically by AI ATS Screening Engine.
               </button>
             </div>
           </div>
+
+          {batchError && (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-4 bg-red-500/10 border border-red-500/30 rounded-2xl text-xs text-red-300">
+              <div className="flex items-center gap-2.5">
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                <span>{batchError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={startBulkScreening}
+                disabled={isProcessing}
+                className="px-3.5 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-200 border border-red-500/40 rounded-xl font-bold transition-all whitespace-nowrap"
+              >
+                Retry Screening
+              </button>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {files.map((file) => (
