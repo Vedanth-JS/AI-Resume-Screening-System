@@ -7,7 +7,8 @@ python-multipart>=0.0.9
 python-dotenv>=1.0.0
 
 # ─── Database ────────────────────────────────────────────────────────────────
-sqlalchemy>=2.0.0
+sqlalchemy[asyncio]>=2.0.0
+greenlet>=3.0.0
 asyncpg>=0.29.0
 psycopg2-binary>=2.9.9
 alembic>=1.13.0
@@ -39,6 +40,8 @@ spacy>=3.7.0
 
 # ─── Document Parsing ────────────────────────────────────────────────────────
 pymupdf>=1.24.0
+python-docx>=1.1.0
+openpyxl>=3.1.0
 reportlab>=4.2.0
 
 # ─── Agent / Orchestration ───────────────────────────────────────────────────
