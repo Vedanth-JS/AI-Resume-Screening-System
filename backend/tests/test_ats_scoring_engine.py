@@ -10,8 +10,8 @@ Validates:
   - Extraction failure protection
 """
 import pytest
-from backend.app.core.ats_scoring_engine import ATSScoringEngine
-from backend.app.schemas.ats_engine import ATSScoreResponse, CustomJDConfig, ATSCriteriaWeights
+from app.core.ats_scoring_engine import ATSScoringEngine
+from app.schemas.ats_engine import ATSScoreResponse, CustomJDConfig, ATSCriteriaWeights
 
 
 STRONG_BACKEND_RESUME = """
