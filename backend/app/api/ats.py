@@ -34,6 +34,7 @@ ViewerOnly = get_current_user_with_role(RoleEnum.VIEWER)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class AdvanceStageRequest(BaseModel):
+    application_id: int
     new_stage: PipelineStageEnum
     notes: str = ""
 
@@ -296,6 +297,7 @@ async def get_offers(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/reject")
+@router.post("/pipeline/reject")
 async def reject_candidate(
     req: RejectRequest,
     db: AsyncSession = Depends(get_db),
