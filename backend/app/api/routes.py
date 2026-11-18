@@ -12,7 +12,7 @@ import hashlib
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Request, Query, Body
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 import redis as redis_lib
 
 from ..db.database import get_db, AsyncSessionLocal
@@ -644,26 +644,27 @@ async def chat_candidates(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(ViewerOnly),
 ):
-    # Validate environment configuration
-    if not settings.GOOGLE_API_KEY:
-        log.error("chat_candidates.missing_api_key")
-        raise HTTPException(
-            500,
-            "Server configuration error: AI search service not available. Please contact administrator."
-        )
-
     if not query or not query.strip():
         raise HTTPException(400, "Query cannot be empty")
 
     try:
+        org_id = current_user.org_id
         rag = RAGService(db)
-        results = await rag.search_candidates(query, current_user.org_id)
-        
+        results = await rag.search_candidates(query, org_id)
+
+        # Count total active candidates in the user's org pool for helpful empty-state messaging
+        pool_count_stmt = select(func.count(models.Candidate.id)).where(
+            models.Candidate.org_id == org_id,
+            models.Candidate.deleted_at.is_(None),
+        )
+        total_pool_size = (await db.execute(pool_count_stmt)).scalar() or 0
+
         return {
             "success": True,
             "results": results,
             "query": query,
-            "count": len(results)
+            "count": len(results),
+            "total_pool_size": total_pool_size,
         }
     except HTTPException:
         raise
@@ -1086,6 +1087,7 @@ async def bulk_screen_endpoint(
     job_description: Optional[str] = Form(default=None),
     custom_jd: Optional[str] = Form(default=None),
     weights: Optional[str] = Form(default=None),
+    db: AsyncSession = Depends(get_db),
     current_user=Depends(OptionalUser),
 ):
     import json
@@ -1124,6 +1126,59 @@ async def bulk_screen_endpoint(
     successful = [r for r in results if r.status == "COMPLETED" and r.overall_ats_score is not None]
     errors = [r for r in results if r.status == "ERROR"]
     avg_score = round(sum(r.overall_ats_score for r in successful) / len(successful), 1) if successful else 0.0
+
+    # Persist screened candidates into the user's org candidate pool so /chat & /candidates can search them
+    if current_user is not None and successful:
+        try:
+            org_id = current_user.org_id
+            for r in successful:
+                prof = r.candidate
+                cand_email = (prof.email or "").strip() or f"{(prof.name or 'candidate').lower().replace(' ', '.')}@uploaded.local"
+                cand_name = (prof.name or "Candidate").strip()
+                parsed_payload = {
+                    "skills": prof.technical_skills,
+                    "technical_skills": prof.technical_skills,
+                    "programming_languages": prof.programming_languages,
+                    "frameworks": prof.frameworks,
+                    "databases": prof.databases,
+                    "tools_and_technologies": prof.tools_and_technologies,
+                    "work_experience_years": prof.work_experience_years,
+                    "education": prof.education,
+                    "college": prof.college,
+                    "graduation_year": prof.graduation_year,
+                    "certifications": prof.certifications,
+                    "overall_ats_score": r.overall_ats_score,
+                    "match_tier": r.match_tier,
+                    "file_name": r.file_name,
+                }
+                existing_stmt = select(models.Candidate).where(
+                    models.Candidate.org_id == org_id,
+                    models.Candidate.email == cand_email,
+                    models.Candidate.deleted_at.is_(None),
+                )
+                existing_cand = (await db.execute(existing_stmt)).scalars().first()
+                if existing_cand:
+                    existing_cand.name = cand_name
+                    existing_cand.phone = prof.phone or existing_cand.phone
+                    existing_cand.raw_text = prof.raw_text or existing_cand.raw_text
+                    existing_cand.parsed_json = parsed_payload
+                    existing_cand.status = "SCREENED"
+                else:
+                    db.add(
+                        models.Candidate(
+                            org_id=org_id,
+                            name=cand_name,
+                            email=cand_email,
+                            phone=prof.phone,
+                            raw_text=prof.raw_text or "",
+                            parsed_json=parsed_payload,
+                            status="SCREENED",
+                        )
+                    )
+            await db.commit()
+        except Exception as persist_err:
+            log.warning("bulk_screen.candidate_persist_failed", error=str(persist_err))
+            await db.rollback()
 
     role_used = (
         parsed_custom_jd.title if parsed_custom_jd and parsed_custom_jd.title

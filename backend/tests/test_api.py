@@ -331,3 +331,53 @@ async def test_ats_score_endpoint_explicit_jd(client, auth_token):
     assert "Match" in data["match_tier"]
 
 
+@pytest.mark.asyncio
+async def test_chat_search_empty_and_after_bulk_upload(client, auth_token):
+    """Test /api/chat returns clean empty state when no candidates exist, and matches uploaded resumes."""
+    headers = {"Authorization": f"Bearer {auth_token}"}
+
+    # 1. Empty pool should return 200 OK with 0 results (NOT a 500 error)
+    resp_empty = await client.post("/api/chat", params={"query": "python"}, headers=headers)
+    assert resp_empty.status_code == 200
+    empty_data = resp_empty.json()
+    assert empty_data["success"] is True
+    assert empty_data["results"] == []
+    assert empty_data["total_pool_size"] == 0
+
+    # 2. Upload a resume via /api/ats/bulk-screen (should auto-persist into user's org pool)
+    resume_bytes = (
+        b"Priya Sharma\n"
+        b"priya.sharma@example.com | +91-9876543210\n"
+        b"SUMMARY\nSenior Python Backend Engineer with 5 years of experience in FastAPI, Django, PostgreSQL, and Docker.\n"
+        b"SKILLS\nPython, FastAPI, Django, PostgreSQL, Redis, Docker\n"
+        b"EXPERIENCE\nSenior Backend Developer - FinTech Corp (2021 - Present)\n"
+        b"Built scalable Python microservices processing 1M transactions/day.\n"
+        b"EDUCATION\nB.Tech Computer Science (2020)\n"
+    )
+    upload_resp = await client.post(
+        "/api/ats/bulk-screen",
+        files=[("files", ("priya_resume.txt", resume_bytes, "text/plain"))],
+        data={"job_role": "Python Developer"},
+        headers=headers,
+    )
+    assert upload_resp.status_code == 200
+
+    # 3. Search "python" on /api/chat -> should match Priya Sharma
+    resp_match = await client.post("/api/chat", params={"query": "python"}, headers=headers)
+    assert resp_match.status_code == 200
+    match_data = resp_match.json()
+    assert match_data["success"] is True
+    assert match_data["count"] >= 1
+    assert match_data["total_pool_size"] >= 1
+    assert any("Priya" in c["name"] for c in match_data["results"])
+
+    # 4. Unrelated query -> 200 OK with 0 matches, total_pool_size >= 1
+    resp_none = await client.post("/api/chat", params={"query": "fortran cobol"}, headers=headers)
+    assert resp_none.status_code == 200
+    none_data = resp_none.json()
+    assert none_data["success"] is True
+    assert none_data["results"] == []
+    assert none_data["total_pool_size"] >= 1
+
+
+
